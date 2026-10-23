@@ -419,7 +419,7 @@ class PharmacyBillItem(models.Model):
 
 
 class LabBill(BaseBill):
-    lab_order = models.ForeignKey(LabOrder, on_delete=models.PROTECT, related_name="bills")
+    lab_order = models.OneToOneField(LabOrder, on_delete=models.PROTECT, related_name="bill")
     subtotal = models.DecimalField(max_digits=10, decimal_places=2)
 
 

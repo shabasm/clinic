@@ -44,7 +44,7 @@ INSTALLED_APPS = [
     'apps.doctor',
     'apps.pharmacy',
     'apps.lab',
-    'restframework',
+    'rest_framework',
     'corsheaders',
 ]
 
@@ -139,6 +139,12 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+# """REST_FRAMEWORK = {
+#     "DEFAULT_AUTHENTICATION_CLASSES": (
+#         "rest_framework_simplejwt.authentication.JWTAuthentication",  # Comment this block after use.
+#     ),
+# }"""
 
 # JWT Authentication
 REST_FRAMEWORK = {
