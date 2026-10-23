@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+from decouple import config as db_config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -84,11 +85,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.mysql",
-        "NAME": "clinicms",
-        "USER": "root",
-        "PASSWORD": "mysql_123",
-        "HOST": "localhost",
-        "PORT": "3306",
+        "NAME": db_config("DB_NAME"),
+        "USER": db_config("DB_USER"),
+        "PASSWORD": db_config("DB_PASSWORD"),
+        "HOST": db_config("DB_HOST", default="localhost"),
+        "PORT": db_config("DB_PORT", default="3306"),
     }
 }
 
