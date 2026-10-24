@@ -21,4 +21,6 @@ urlpatterns = [
 
     # Pharmacy Module APIs
     path('api/pharmacy/', include('apps.pharmacy.urls')),
+
+    path("api/", include("apps.doctor.urls")),
 ]
