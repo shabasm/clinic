@@ -9,7 +9,7 @@ Views for the Pharmacy module. Pharmacists can:
         2. mark it as Paid
         3. dispense           (stock goes down; only paid-for quantities can be given)
     or decline a prescription that has no bill yet
-  - see pharmacy bills and mark them as paid
+  - see pharmacy bills, mark them as paid, or cancel unpaid ones
 """
 from decimal import Decimal
 
@@ -290,12 +290,13 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 # ---------------------------------------------------------------------------
-# Pharmacy bills (read only, plus marking as paid)
+# Pharmacy bills (read only, plus marking as paid or cancelling)
 # ---------------------------------------------------------------------------
 class PharmacyBillViewSet(viewsets.ReadOnlyModelViewSet):
     """GET  /bills/
        GET  /bills/?payment_status=Pending
-       POST /bills/<id>/pay/       mark the bill as Paid"""
+       POST /bills/<id>/pay/       mark the bill as Paid
+       POST /bills/<id>/cancel/    delete a bill that is still unpaid"""
     permission_classes = [IsPharmacist]
     serializer_class = PharmacyBillSerializer
 
@@ -313,9 +314,30 @@ class PharmacyBillViewSet(viewsets.ReadOnlyModelViewSet):
     @action(detail=True, methods=["post"])
     def pay(self, request, pk=None):
         bill = self.get_object()
+
+        # Re-check stock at payment time, so nobody pays for medicine that is gone.
+        if bill.payment_status == PharmacyBill.PaymentStatus.PENDING:
+            for line in bill.items.select_related("medicine"):
+                in_stock = line.medicine.stock_quantity
+                if line.quantity > in_stock:
+                    raise ValidationError(
+                        f"{line.medicine_name}: only {in_stock} in stock now. "
+                        "Cancel this bill or request stock."
+                    )
+
         serializer = PharmacyBillSerializer(
             bill, data={"payment_status": PharmacyBill.PaymentStatus.PAID}, partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()  # also sets paid_at
         return Response(serializer.data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        """Cancel (delete) a bill that has not been paid yet."""
+        with transaction.atomic():
+            bill = get_object_or_404(PharmacyBill.objects.select_for_update(), pk=pk)
+            if bill.payment_status != PharmacyBill.PaymentStatus.PENDING:
+                raise ValidationError("Only an unpaid bill can be cancelled.")
+            bill.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
