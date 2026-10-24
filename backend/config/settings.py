@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+
 from decouple import config as db_config
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -22,8 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-y@sd$zlec2nq0lgs@8)jo4ne%_@o+v%=s5#pwxmqpzcjl+2lbl'
-
+SECRET_KEY = db_config("SECRET_KEY")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
@@ -45,7 +45,10 @@ INSTALLED_APPS = [
     'apps.pharmacy',
     'apps.lab',
     'rest_framework',
+
     'corsheaders',
+
+
 ]
 
 MIDDLEWARE = [
@@ -83,6 +86,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
 DATABASES = {
+
     "default": {
         "ENGINE": "django.db.backends.mysql",
         "NAME": db_config("DB_NAME"),
@@ -90,6 +94,7 @@ DATABASES = {
         "PASSWORD": db_config("DB_PASSWORD"),
         "HOST": db_config("DB_HOST", default="localhost"),
         "PORT": db_config("DB_PORT", default="3306"),
+
     }
 }
 
@@ -139,6 +144,7 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
 
 # """REST_FRAMEWORK = {
 #     "DEFAULT_AUTHENTICATION_CLASSES": (
