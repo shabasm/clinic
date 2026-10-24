@@ -1,0 +1,8 @@
+venv/
+myvirtualenv/
+db.sqlite3
+__pycache__/
+*.pyc
+.env
+dist/
+.vscode/

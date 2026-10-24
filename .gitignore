@@ -1,9 +1,0 @@
-venv/
-myvirtualenv/
-node_modules/
-db.sqlite3
-__pycache__/
-*.pyc
-.env
-dist/
-.vscode/
