@@ -333,13 +333,18 @@ class LabOrder(models.Model):
     @property
     def overall_status(self):
         """Calculated from the test items; never stored."""
-        statuses = set(self.items.values_list("status", flat=True))
-        if not statuses:
+        if not self.items.exists():
             return "Empty"
+        active_items = self.items.exclude(
+            status__in=[LabOrderItem.Status.DECLINED, LabOrderItem.Status.CANCELLED]
+        )
+        if not active_items.exists():
+            if self.items.filter(status=LabOrderItem.Status.DECLINED).exists():
+                return "Declined"
+            return "Cancelled"
+        statuses = set(active_items.values_list("status", flat=True))
         if statuses == {LabOrderItem.Status.COMPLETED}:
             return "Completed"
-        if statuses <= {LabOrderItem.Status.CANCELLED}:
-            return "Cancelled"
         if LabOrderItem.Status.IN_PROGRESS in statuses:
             return "In Progress"
         return "Open"
@@ -352,6 +357,7 @@ class LabOrderItem(models.Model):
     class Status(models.TextChoices):
         RECOMMENDED = "Recommended", "Recommended"
         SELECTED = "Selected", "Selected"
+        DECLINED = "Declined", "Declined"
         PAID = "Paid", "Paid"
         IN_PROGRESS = "In Progress", "In Progress"
         COMPLETED = "Completed", "Completed"
@@ -363,14 +369,60 @@ class LabOrderItem(models.Model):
     cost = models.DecimalField(max_digits=8, decimal_places=2)  # copied at order time
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.RECOMMENDED)
     selected_date = models.DateField(null=True, blank=True)
+    declined_date = models.DateField(null=True, blank=True)
     paid_date = models.DateField(null=True, blank=True)
     completed_date = models.DateField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lab_order", "test"],
+                name="unique_test_per_lab_order",
+            )
+        ]
 
     def __str__(self):
         return f"{self.test_name} ({self.status})"
 
 
+class LabReport(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "Pending", "Pending"
+        PARTIALLY_COMPLETED = "Partially Completed", "Partially Completed"
+        COMPLETED = "Completed", "Completed"
+        RELEASED = "Released", "Released"
+
+    lab_order = models.OneToOneField(
+        LabOrder, on_delete=models.CASCADE, related_name="report"
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    released_at = models.DateTimeField(null=True, blank=True)
+    released_by = models.ForeignKey(
+        Staff,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="released_reports",
+        limit_choices_to={"role__in": [Staff.Role.LAB_TECHNICIAN, Staff.Role.DOCTOR]},
+    )
+    summary_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Report for Order {self.lab_order_id} ({self.status})"
+
+
 class LabResult(models.Model):
+    report = models.ForeignKey(
+        LabReport,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="results",
+    )
     order_item = models.OneToOneField(LabOrderItem, on_delete=models.CASCADE, related_name="result")
     result = models.TextField()
     reference_range = models.CharField(max_length=255, blank=True)
@@ -379,6 +431,14 @@ class LabResult(models.Model):
         Staff, on_delete=models.PROTECT, limit_choices_to={"role": Staff.Role.LAB_TECHNICIAN}
     )
     result_date = models.DateField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["report", "order_item"],
+                name="unique_result_per_report_item",
+            )
+        ]
 
     def __str__(self):
         return f"Result for {self.order_item}"
@@ -438,10 +498,15 @@ class LabBill(BaseBill):
 
 class LabBillItem(models.Model):
     bill = models.ForeignKey(LabBill, on_delete=models.CASCADE, related_name="items")
+    order_item = models.ForeignKey(
+        LabOrderItem,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="bill_items",
+    )
     test = models.ForeignKey(LabTest, on_delete=models.PROTECT)
     test_name = models.CharField(max_length=100)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=8, decimal_places=2)
-    line_total = models.DecimalField(max_digits=10, decimal_places=2)
-
     line_total = models.DecimalField(max_digits=10, decimal_places=2)
