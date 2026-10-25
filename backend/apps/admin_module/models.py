@@ -1,8 +1,15 @@
 """
 apps/admin_module/models.py
 
-All clinic models live in this one app. The other apps (reception, doctor,
-pharmacy, lab) import what they need, e.g.:
+All clinic models live in this app, organised by functional module:
+  1. Admin / Core Module
+  2. Reception Module
+  3. Doctor Module
+  4. Pharmacy Module
+  5. Laboratory Module
+  6. Billing Module
+
+The other apps (reception, doctor, pharmacy, lab) import what they need, e.g.:
     from apps.admin_module.models import Patient, Token
 
 Login: Django's built-in User holds username and (hashed) password.
@@ -12,9 +19,10 @@ from django.contrib.auth.models import User
 from django.db import models
 
 
-# ---------------------------------------------------------------------------
-# Settings (single row)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# 1. ADMIN / CORE MODULE
+# ===========================================================================
+
 class Settings(models.Model):
     registration_fee = models.DecimalField(max_digits=8, decimal_places=2, default=100)
     low_stock_threshold = models.PositiveIntegerField(default=10)
@@ -35,9 +43,6 @@ class Settings(models.Model):
         return "Clinic settings"
 
 
-# ---------------------------------------------------------------------------
-# People
-# ---------------------------------------------------------------------------
 class Department(models.Model):
     """Managed by the Admin (add, edit, delete). Used by doctor profiles."""
     name = models.CharField(max_length=100, unique=True)
@@ -84,31 +89,9 @@ class Staff(models.Model):
         return f"{self.full_name} ({self.role})"
 
 
-class DoctorProfile(models.Model):
-    """A doctor is a Staff record plus this profile. Doctor status and staff
-    status are separate; a doctor is available only if both are active."""
-    staff = models.OneToOneField(
-        Staff, on_delete=models.CASCADE, related_name="doctor_profile",
-        limit_choices_to={"role": Staff.Role.DOCTOR},
-    )
-    department = models.ForeignKey(
-        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name="doctors"
-    )
-    experience_years = models.PositiveIntegerField(null=True, blank=True)
-    medical_license_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
-    consultation_fee = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
-    consultation_days = models.JSONField(default=list, blank=True)  # e.g. ["Monday", "Tuesday"]
-    consultation_start_time = models.TimeField(null=True, blank=True)
-    consultation_end_time = models.TimeField(null=True, blank=True)
-    is_active = models.BooleanField(default=True)
-
-    @property
-    def is_available(self):
-        return self.is_active and self.staff.is_active
-
-    def __str__(self):
-        return self.staff.full_name
-
+# ===========================================================================
+# 2. RECEPTION MODULE
+# ===========================================================================
 
 class Patient(models.Model):
     full_name = models.CharField(max_length=100)
@@ -127,9 +110,6 @@ class Patient(models.Model):
         return self.full_name
 
 
-# ---------------------------------------------------------------------------
-# Booking and token queue
-# ---------------------------------------------------------------------------
 class Booking(models.Model):
     class Status(models.TextChoices):
         RESERVED = "Reserved", "Reserved"
@@ -139,7 +119,7 @@ class Booking(models.Model):
         COMPLETED = "Completed", "Completed"
 
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="bookings")
-    doctor = models.ForeignKey(DoctorProfile, on_delete=models.PROTECT, related_name="bookings")
+    doctor = models.ForeignKey("DoctorProfile", on_delete=models.PROTECT, related_name="bookings")
     date = models.DateField()
     reserved_token_number = models.PositiveIntegerField()
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.RESERVED)
@@ -171,7 +151,7 @@ class Token(models.Model):
         CANCELLED = "Cancelled", "Cancelled"
         SKIPPED = "Skipped", "Skipped"
 
-    doctor = models.ForeignKey(DoctorProfile, on_delete=models.PROTECT, related_name="tokens")
+    doctor = models.ForeignKey("DoctorProfile", on_delete=models.PROTECT, related_name="tokens")
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="tokens")
     date = models.DateField()
     token_number = models.PositiveIntegerField()
@@ -197,6 +177,36 @@ class Token(models.Model):
         return f"Token {self.token_number} - {self.doctor} - {self.date}"
 
 
+# ===========================================================================
+# 3. DOCTOR MODULE
+# ===========================================================================
+
+class DoctorProfile(models.Model):
+    """A doctor is a Staff record plus this profile. Doctor status and staff
+    status are separate; a doctor is available only if both are active."""
+    staff = models.OneToOneField(
+        Staff, on_delete=models.CASCADE, related_name="doctor_profile",
+        limit_choices_to={"role": Staff.Role.DOCTOR},
+    )
+    department = models.ForeignKey(
+        Department, on_delete=models.SET_NULL, null=True, blank=True, related_name="doctors"
+    )
+    experience_years = models.PositiveIntegerField(null=True, blank=True)
+    medical_license_number = models.CharField(max_length=50, unique=True, null=True, blank=True)
+    consultation_fee = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    consultation_days = models.JSONField(default=list, blank=True)  # e.g. ["Monday", "Tuesday"]
+    consultation_start_time = models.TimeField(null=True, blank=True)
+    consultation_end_time = models.TimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    @property
+    def is_available(self):
+        return self.is_active and self.staff.is_active
+
+    def __str__(self):
+        return self.staff.full_name
+
+
 class Consultation(models.Model):
     class Status(models.TextChoices):
         IN_PROGRESS = "In Progress", "In Progress"
@@ -215,9 +225,10 @@ class Consultation(models.Model):
         return f"Consultation {self.pk} - {self.patient}"
 
 
-# ---------------------------------------------------------------------------
-# Pharmacy
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# 4. PHARMACY MODULE
+# ===========================================================================
+
 class Medicine(models.Model):
     name = models.CharField(max_length=100)
     manufacturer = models.CharField(max_length=100, blank=True)
@@ -299,9 +310,10 @@ class PrescriptionItem(models.Model):
         return f"{self.medicine_name} x{self.prescribed_quantity}"
 
 
-# ---------------------------------------------------------------------------
-# Laboratory
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# 5. LABORATORY MODULE
+# ===========================================================================
+
 class LabTest(models.Model):
     name = models.CharField(max_length=100)
     normal_values = models.CharField(max_length=255, blank=True)
@@ -372,9 +384,10 @@ class LabResult(models.Model):
         return f"Result for {self.order_item}"
 
 
-# ---------------------------------------------------------------------------
-# Billing (four bill types; each is Pending until marked Paid)
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# 6. BILLING MODULE
+# ===========================================================================
+
 class BaseBill(models.Model):
     class PaymentStatus(models.TextChoices):
         PENDING = "Pending", "Pending"
@@ -429,4 +442,6 @@ class LabBillItem(models.Model):
     test_name = models.CharField(max_length=100)
     quantity = models.PositiveIntegerField(default=1)
     unit_price = models.DecimalField(max_digits=8, decimal_places=2)
+    line_total = models.DecimalField(max_digits=10, decimal_places=2)
+
     line_total = models.DecimalField(max_digits=10, decimal_places=2)
