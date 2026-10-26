@@ -113,13 +113,17 @@ class MedicineRequestSerializer(serializers.ModelSerializer):
 # Prescriptions
 # ---------------------------------------------------------------------------
 def billing_totals(prescription):
-    """{medicine_id: (billed_quantity, paid_quantity)} over all bills of a prescription."""
+    """{prescription_item_id: (billed_quantity, paid_quantity)} over all bills of a prescription."""
     totals = {}
     for bill in prescription.bills.all():
         is_paid = bill.payment_status == PharmacyBill.PaymentStatus.PAID
         for line in bill.items.all():
-            billed, paid = totals.get(line.medicine_id, (0, 0))
-            totals[line.medicine_id] = (billed + line.quantity, paid + (line.quantity if is_paid else 0))
+            if line.prescription_item_id:
+                billed, paid = totals.get(line.prescription_item_id, (0, 0))
+                totals[line.prescription_item_id] = (
+                    billed + line.quantity,
+                    paid + (line.quantity if is_paid else 0),
+                )
     return totals
 
 
@@ -129,6 +133,9 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
     unit_price = serializers.DecimalField(
         source="medicine.price", max_digits=8, decimal_places=2, read_only=True
     )
+    expiry_date = serializers.DateField(source="medicine.expiry_date", read_only=True)
+    medicine_is_active = serializers.BooleanField(source="medicine.is_active", read_only=True)
+    stock_state = serializers.CharField(source="medicine.stock_state", read_only=True)
     # Worked out from the bills; "totals" is passed in by PrescriptionSerializer.
     billed_quantity = serializers.SerializerMethodField()
     paid_quantity = serializers.SerializerMethodField()
@@ -149,11 +156,14 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
             "instructions",
             "stock_quantity",
             "unit_price",
+            "expiry_date",
+            "medicine_is_active",
+            "stock_state",
         )
         read_only_fields = fields
 
     def _totals(self, item):
-        return self.context.get("totals", {}).get(item.medicine_id, (0, 0))
+        return self.context.get("totals", {}).get(item.id, (0, 0))
 
     def get_billed_quantity(self, item):
         return self._totals(item)[0]
@@ -169,6 +179,7 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
 class PrescriptionSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source="patient.full_name", read_only=True)
     doctor_name = serializers.CharField(source="doctor.staff.full_name", read_only=True)
+    bill_count = serializers.SerializerMethodField()
     items = serializers.SerializerMethodField()
 
     class Meta:
@@ -182,9 +193,15 @@ class PrescriptionSerializer(serializers.ModelSerializer):
             "doctor_name",
             "date",
             "status",
+            "bill_count",
             "items",
         )
         read_only_fields = fields
+
+    def get_bill_count(self, prescription):
+        if hasattr(prescription, "_prefetched_objects_cache") and "bills" in prescription._prefetched_objects_cache:
+            return len(prescription.bills.all())
+        return prescription.bills.count()
 
     def get_items(self, prescription):
         serializer = PrescriptionItemSerializer(
@@ -220,7 +237,16 @@ class ItemQuantitiesSerializer(serializers.Serializer):
 class PharmacyBillItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = PharmacyBillItem
-        fields = ("id", "bill", "medicine", "medicine_name", "quantity", "unit_price", "line_total")
+        fields = (
+            "id",
+            "bill",
+            "prescription_item",
+            "medicine",
+            "medicine_name",
+            "quantity",
+            "unit_price",
+            "line_total",
+        )
 
 
 class PharmacyBillSerializer(serializers.ModelSerializer):
