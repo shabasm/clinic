@@ -10,6 +10,7 @@ from .views import (
     MedicineRequestViewSet,
     MedicineViewSet,
     PharmacyBillViewSet,
+    PharmacyDashboardView,
     PrescriptionViewSet,
 )
 
@@ -20,5 +21,6 @@ router.register("prescriptions", PrescriptionViewSet, basename="pharmacy-prescri
 router.register("bills", PharmacyBillViewSet, basename="pharmacy-bill")
 
 urlpatterns = [
+    path("dashboard/", PharmacyDashboardView.as_view(), name="pharmacy-dashboard"),
     path("", include(router.urls)),
 ]

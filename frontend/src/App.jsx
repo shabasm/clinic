@@ -10,6 +10,7 @@ import Medicines from "./admin/pages/Medicines";
 import Staff from "./admin/pages/Staff";
 import StockRequest from "./admin/pages/StockRequest";
 import RoleNotice from "./shared/RoleNotice";
+import PharmacyRoutes from "./pharmacy/PharmacyRoutes";
 
 const roleRoutes = {
   Admin: "/admin/dashboard",
@@ -48,7 +49,7 @@ function App() {
         <Route path="/admin/labtests" element={<AdminRoute><LabTests /></AdminRoute>} />
         <Route path="/admin/charges" element={<AdminRoute><Charges /></AdminRoute>} />
         <Route path="/admin/stock-requests" element={<AdminRoute><StockRequest /></AdminRoute>} />
-        <Route path="/pharmacy/dashboard" element={<RequireRole roles={["Pharmacist"]}><RoleNotice title="Pharmacy workspace" message="Pharmacy workflows are outside the Admin module." /></RequireRole>} />
+        <Route path="/pharmacy/*" element={<RequireRole roles={["Pharmacist"]}><PharmacyRoutes /></RequireRole>} />
         <Route path="/lab/dashboard" element={<RequireRole roles={["Lab Technician"]}><RoleNotice title="Lab workspace" message="Lab workflows are outside the Admin module." /></RequireRole>} />
         <Route path="/doctor/dashboard" element={<RequireRole roles={["Doctor"]}><RoleNotice title="Doctor workspace" message="Doctor frontend and API workflows are not yet available in this project." /></RequireRole>} />
         <Route path="/reception/dashboard" element={<RequireRole roles={["Receptionist"]}><RoleNotice title="Reception workspace" message="Reception frontend and API workflows are not yet available in this project." /></RequireRole>} />
