@@ -9,11 +9,16 @@ import {
 import PharmacyNavbar from "../components/PharmacyNavbar";
 import { badgeColor, getBills } from "../services/pharmacyApi";
 
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function BillsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [bills, setBills] = useState([]);
   const [search, setSearch] = useState("");
   const statusFilter = searchParams.get("payment_status") || "";
+  const [dateFilter, setDateFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -44,14 +49,35 @@ function BillsPage() {
     setSearchParams(newParams);
   };
 
-  // Client-side search by patient or bill ID
+  const today = todayStr();
+
+  // Compute stats from the full bills array (before date/search filter)
+  const billsToday = bills.filter((b) =>
+    (b.created_at || "").startsWith(today)
+  );
+  const statBillsToday = billsToday.length;
+  const statRevenueToday = billsToday
+    .filter((b) => b.payment_status === "Paid")
+    .reduce((sum, b) => sum + Number(b.total || 0), 0);
+  const statTotalBills = bills.length;
+
+  // Apply search + date filter for table display
   const filtered = bills.filter((b) => {
-    const text = `${formatId("BILL", b.id)} ${b.patient_name || ""} ${formatId(
-      "PAT",
-      b.patient
-    )} ${formatId("RX", b.prescription)}`.toLowerCase();
+    const billDate = (b.created_at || "").slice(0, 10);
+    if (dateFilter && billDate !== dateFilter) return false;
+    const text =
+      `${formatId("BILL", b.id)} ${b.patient_name || ""} ${formatId(
+        "PAT",
+        b.patient
+      )} ${formatId("RX", b.prescription)}`.toLowerCase();
     return text.includes(search.toLowerCase());
   });
+
+  // Daily total for currently displayed rows
+  const displayedTotal = filtered.reduce(
+    (sum, b) => sum + Number(b.total || 0),
+    0
+  );
 
   return (
     <>
@@ -70,7 +96,38 @@ function BillsPage() {
           </div>
         )}
 
-        <div className="d-flex flex-wrap toolbar mb-3">
+        {/* Stats row */}
+        {!loading && (
+          <div className="row g-3 mb-4">
+            <div className="col-6 col-md-4">
+              <div className="card stat-card h-100">
+                <div className="card-body">
+                  <div className="small text-secondary">Bills Today</div>
+                  <div className="stat-num">{statBillsToday}</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-4">
+              <div className="card stat-card h-100">
+                <div className="card-body">
+                  <div className="small text-secondary">Revenue Today</div>
+                  <div className="stat-num">{formatMoney(statRevenueToday)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="col-6 col-md-4">
+              <div className="card stat-card h-100">
+                <div className="card-body">
+                  <div className="small text-secondary">All Bills</div>
+                  <div className="stat-num">{statTotalBills}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filters toolbar */}
+        <div className="d-flex flex-wrap toolbar mb-3 gap-2">
           <div className="input-group w-auto flex-grow-1">
             <span className="input-group-text">Search</span>
             <input
@@ -91,6 +148,23 @@ function BillsPage() {
             <option value="Pending">Pending</option>
             <option value="Paid">Paid</option>
           </select>
+          <input
+            type="date"
+            className="form-control w-auto"
+            aria-label="Filter by date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            title="Filter bills by date"
+          />
+          {dateFilter && (
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              onClick={() => setDateFilter("")}
+            >
+              Clear date
+            </button>
+          )}
         </div>
 
         <div className="card">
@@ -125,9 +199,15 @@ function BillsPage() {
                         </Link>
                       </td>
                       <td>{formatDate(b.created_at)}</td>
-                      <td className="text-end fw-semibold">{formatMoney(b.total)}</td>
+                      <td className="text-end fw-semibold">
+                        {formatMoney(b.total)}
+                      </td>
                       <td>
-                        <span className={`badge text-bg-${badgeColor(b.payment_status)}`}>
+                        <span
+                          className={`badge text-bg-${badgeColor(
+                            b.payment_status
+                          )}`}
+                        >
                           {b.payment_status}
                         </span>
                       </td>
@@ -144,11 +224,30 @@ function BillsPage() {
                 ) : (
                   <tr>
                     <td className="empty" colSpan="7">
-                      {bills.length ? "No matching bills." : "No pharmacy bills have been created yet."}
+                      {bills.length
+                        ? "No matching bills."
+                        : "No pharmacy bills have been created yet."}
                     </td>
                   </tr>
                 )}
               </tbody>
+              {/* Daily total footer */}
+              {!loading && filtered.length > 0 && (
+                <tfoot>
+                  <tr className="table-light">
+                    <th colSpan="4" className="text-end text-secondary small">
+                      {dateFilter
+                        ? `Total for ${formatDate(dateFilter)}`
+                        : "Displayed total"}
+                      :
+                    </th>
+                    <th className="text-end text-primary">
+                      {formatMoney(displayedTotal)}
+                    </th>
+                    <th colSpan="2"></th>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </div>

@@ -38,6 +38,10 @@ export function declinePrescription(id) {
   return api.post(`pharmacy/prescriptions/${id}/decline/`).then((res) => res.data);
 }
 
+/**
+ * Get pharmacy bills.
+ * Supported params: payment_status, prescription, date (YYYY-MM-DD)
+ */
 export function getBills(params) {
   return api.get("pharmacy/bills/", { params }).then((res) => collection(res.data));
 }

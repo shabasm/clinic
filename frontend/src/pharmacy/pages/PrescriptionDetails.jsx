@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   errorMessage,
@@ -33,6 +33,9 @@ function PrescriptionDetails() {
 
   // Confirmation modal state: "bill" | "dispense" | "decline" | null
   const [activeModal, setActiveModal] = useState(null);
+
+  // Ref for the printable instruction slip
+  const slipRef = useRef(null);
 
   const reloadData = () => {
     Promise.all([getPrescription(id), getBills({ prescription: id })])
@@ -157,6 +160,41 @@ function PrescriptionDetails() {
     }
   };
 
+  // Print Instruction Slip — opens a new window with just the slip content
+  const handlePrintInstructions = () => {
+    if (!prescription) return;
+    const slipHtml = slipRef.current?.innerHTML || "";
+    const win = window.open("", "_blank", "width=700,height=600");
+    if (!win) return;
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8" />
+          <title>Prescription Instructions — ${formatId("RX", prescription.id)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 2rem; color: #222; }
+            h2 { color: #0f8b8d; margin-bottom: 0.25rem; }
+            .subtitle { color: #6c7c80; font-size: 0.9rem; margin-bottom: 1.5rem; }
+            .meta { display: flex; gap: 2rem; margin-bottom: 1.5rem; font-size: 0.9rem; }
+            .meta div span { font-weight: 600; }
+            table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+            th { background: #0f8b8d; color: #fff; padding: 0.5rem 0.75rem; text-align: left; }
+            td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #ddd; }
+            tr:last-child td { border-bottom: none; }
+            .footer { margin-top: 2rem; font-size: 0.8rem; color: #6c7c80; text-align: center; border-top: 1px solid #ddd; padding-top: 1rem; }
+            @media print { body { margin: 1rem; } }
+          </style>
+        </head>
+        <body>
+          ${slipHtml}
+          <script>window.onload = function(){ window.print(); }<\/script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
   if (loading) {
     return (
       <>
@@ -213,9 +251,19 @@ function PrescriptionDetails() {
             <h1 className="mb-1">Prescription {formatId("RX", prescription.id)}</h1>
             <p className="mb-0">Review prescription lines, bill, and dispense.</p>
           </div>
-          <Link to="/pharmacy/prescriptions" className="btn btn-outline-secondary">
-            Back to Prescriptions
-          </Link>
+          <div className="d-flex gap-2 flex-wrap">
+            <button
+              type="button"
+              className="btn btn-outline-secondary"
+              onClick={handlePrintInstructions}
+              title="Print patient instruction slip"
+            >
+              Print instructions
+            </button>
+            <Link to="/pharmacy/prescriptions" className="btn btn-outline-secondary">
+              Back to Prescriptions
+            </Link>
+          </div>
         </header>
 
         {error && !activeModal && (
@@ -483,6 +531,51 @@ function PrescriptionDetails() {
         </section>
       </main>
 
+      {/* Hidden printable instruction slip — rendered into a ref, printed via new window */}
+      <div style={{ display: "none" }}>
+        <div ref={slipRef}>
+          <h2>✚ CareFlow Clinic</h2>
+          <div className="subtitle">Prescription Instruction Slip</div>
+          <div className="meta">
+            <div>
+              <span>Prescription: </span>
+              {formatId("RX", prescription?.id)}
+            </div>
+            <div>
+              <span>Date: </span>
+              {formatDate(prescription?.date)}
+            </div>
+            <div>
+              <span>Patient: </span>
+              {prescription?.patient_name}
+            </div>
+            <div>
+              <span>Doctor: </span>
+              {prescription?.doctor_name}
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>Medicine</th>
+                <th>Qty</th>
+                <th>Instructions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(prescription?.items || []).map((item) => (
+                <tr key={item.id}>
+                  <td>{item.medicine_name}</td>
+                  <td>{item.prescribed_quantity}</td>
+                  <td>{item.instructions || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="footer">CareFlow Health Management System</div>
+        </div>
+      </div>
+
       {/* Confirmation Modals */}
       {activeModal === "bill" && (
         <ConfirmModal
@@ -514,9 +607,7 @@ function PrescriptionDetails() {
                 No specific quantities entered. This will bill all remaining unbilled quantities
                 for active in-stock items on this prescription.
               </p>
-              <div className="small text-secondary">
-                Totals are calculated by the server.
-              </div>
+              <div className="small text-secondary">Totals are calculated by the server.</div>
             </div>
           )}
         </ConfirmModal>
