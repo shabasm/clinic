@@ -1,7 +1,12 @@
 /* Minimal print rules and receipt styling for Pharmacy module */
 
 @media print {
-  .pharmacy-no-print {
+  .pharmacy-no-print,
+  .pharmacy-no-print.d-flex,
+  header.pharmacy-no-print,
+  nav.pharmacy-no-print,
+  .page-header.pharmacy-no-print,
+  .navbar {
     display: none !important;
   }
 
