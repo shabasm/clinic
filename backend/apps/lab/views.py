@@ -17,6 +17,7 @@ from rest_framework.response import Response
 
 from apps.admin_module.models import (
     LabBill,
+    LabBillItem,
     LabOrder,
     LabOrderItem,
     LabReport,
@@ -66,27 +67,87 @@ class LabTestViewSet(viewsets.ReadOnlyModelViewSet):
 # Lab orders (read only; doctors create them)
 # ---------------------------------------------------------------------------
 class LabOrderViewSet(viewsets.ReadOnlyModelViewSet):
-    """GET /orders/            all orders with at least one paid test
+    """GET /orders/                   all orders (or filtered by status/date/patient)
        GET /orders/?date=YYYY-MM-DD   orders from one day
-       GET /orders/?patient=<id>      orders for one patient"""
+       GET /orders/?patient=<id>      orders for one patient
+       POST /orders/<id>/bill/         bill selected tests and mark them paid"""
     permission_classes = [IsLabTechnician]
     serializer_class = LabOrderSerializer
 
     def get_queryset(self):
         queryset = (
-            LabOrder.objects.filter(items__status__in=LAB_VISIBLE_STATUSES)
-            .select_related("patient", "doctor__staff", "report")
-            .prefetch_related("items__result")
-            .distinct()
+            LabOrder.objects.select_related("patient", "doctor__staff", "report")
+            .prefetch_related("items__result", "items__test")
             .order_by("-date", "-id")
         )
         date = self.request.query_params.get("date")
         patient = self.request.query_params.get("patient")
+        status = self.request.query_params.get("status")
         if date:
             queryset = queryset.filter(date=date)
         if patient:
             queryset = queryset.filter(patient_id=patient)
+        if status:
+            queryset = queryset.filter(items__status=status).distinct()
         return queryset
+
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def bill(self, request, pk=None):
+        order = self.get_object()
+        item_ids = request.data.get("item_ids", [])
+        if not item_ids:
+            raise ValidationError("Please select at least one test to bill.")
+
+        items_to_bill = order.items.filter(id__in=item_ids)
+        if items_to_bill.count() != len(item_ids):
+            raise ValidationError("One or more selected tests do not belong to this order.")
+
+        invalid_items = items_to_bill.filter(
+            status__in=[
+                LabOrderItem.Status.PAID,
+                LabOrderItem.Status.IN_PROGRESS,
+                LabOrderItem.Status.COMPLETED,
+                LabOrderItem.Status.CANCELLED,
+            ]
+        )
+        if invalid_items.exists():
+            names = ", ".join(invalid_items.values_list("test_name", flat=True))
+            raise ValidationError(f"The following tests cannot be billed ({names}).")
+
+        bill, _ = LabBill.objects.get_or_create(
+            lab_order=order,
+            defaults={
+                "patient": order.patient,
+                "subtotal": 0,
+                "total": 0,
+                "payment_status": LabBill.PaymentStatus.PAID,
+                "paid_at": timezone.now(),
+            },
+        )
+
+        for item in items_to_bill:
+            LabBillItem.objects.create(
+                bill=bill,
+                order_item=item,
+                test=item.test,
+                test_name=item.test_name,
+                quantity=1,
+                unit_price=item.cost,
+                line_total=item.cost,
+            )
+            item.status = LabOrderItem.Status.PAID
+            item.paid_date = timezone.localdate()
+            item.save(update_fields=["status", "paid_date"])
+
+        bill.subtotal = sum(i.line_total for i in bill.items.all())
+        bill.total = bill.subtotal
+        bill.payment_status = LabBill.PaymentStatus.PAID
+        if not bill.paid_at:
+            bill.paid_at = timezone.now()
+        bill.save(update_fields=["subtotal", "total", "payment_status", "paid_at"])
+
+        return Response(LabOrderSerializer(order).data)
 
 
 # ---------------------------------------------------------------------------
@@ -97,7 +158,8 @@ class LabOrderItemViewSet(viewsets.ReadOnlyModelViewSet):
        GET  /items/?status=Paid        only tests waiting to be started
        POST /items/<id>/start/         Paid -> In Progress
        POST /items/<id>/select/        Recommended -> Selected
-       POST /items/<id>/decline/       Recommended/Selected -> Declined"""
+       POST /items/<id>/decline/       Recommended/Selected -> Declined
+       POST /items/<id>/cancel/        Cancel/Decline test"""
     permission_classes = [IsLabTechnician]
     serializer_class = LabOrderItemSerializer
 
@@ -150,6 +212,20 @@ class LabOrderItemViewSet(viewsets.ReadOnlyModelViewSet):
         item.status = LabOrderItem.Status.DECLINED
         item.declined_date = timezone.localdate()
         item.save(update_fields=["status", "declined_date"])
+        return Response(LabOrderItemSerializer(item).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel(self, request, pk=None):
+        item = self.get_object()
+        if item.status == LabOrderItem.Status.COMPLETED:
+            raise ValidationError("Cannot cancel a completed test.")
+        if item.status in [LabOrderItem.Status.RECOMMENDED, LabOrderItem.Status.SELECTED]:
+            item.status = LabOrderItem.Status.DECLINED
+            item.declined_date = timezone.localdate()
+            item.save(update_fields=["status", "declined_date"])
+        else:
+            item.status = LabOrderItem.Status.CANCELLED
+            item.save(update_fields=["status"])
         return Response(LabOrderItemSerializer(item).data)
 
 

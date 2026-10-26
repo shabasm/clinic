@@ -150,6 +150,7 @@ class LabResultSerializer(serializers.ModelSerializer):
 class LabOrderItemSerializer(serializers.ModelSerializer):
     # result_details is None until the technician saves a result.
     result_details = LabResultSerializer(source="result", read_only=True)
+    normal_values = serializers.CharField(source="test.normal_values", read_only=True)
 
     class Meta:
         model = LabOrderItem
@@ -158,6 +159,7 @@ class LabOrderItemSerializer(serializers.ModelSerializer):
             "lab_order",
             "test",
             "test_name",
+            "normal_values",
             "cost",
             "status",
             "selected_date",
@@ -170,6 +172,7 @@ class LabOrderItemSerializer(serializers.ModelSerializer):
         # and status changes through dedicated actions.
         read_only_fields = (
             "test_name",
+            "normal_values",
             "cost",
             "status",
             "selected_date",
@@ -255,6 +258,9 @@ class LabReportSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------------------
 class LabOrderSerializer(serializers.ModelSerializer):
     patient_name = serializers.CharField(source="patient.full_name", read_only=True)
+    patient_phone = serializers.CharField(source="patient.phone", read_only=True)
+    patient_gender = serializers.CharField(source="patient.gender", read_only=True)
+    patient_date_of_birth = serializers.DateField(source="patient.date_of_birth", read_only=True)
     doctor_name = serializers.CharField(source="doctor.staff.full_name", read_only=True)
     # overall_status is calculated on the model from its tests, never stored.
     overall_status = serializers.ReadOnlyField()
@@ -269,6 +275,9 @@ class LabOrderSerializer(serializers.ModelSerializer):
             "consultation",
             "patient",
             "patient_name",
+            "patient_phone",
+            "patient_gender",
+            "patient_date_of_birth",
             "doctor",
             "doctor_name",
             "date",
