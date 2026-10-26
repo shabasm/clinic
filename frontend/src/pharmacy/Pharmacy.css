@@ -1,0 +1,55 @@
+/* Minimal print rules and receipt styling for Pharmacy module */
+
+@media print {
+  .pharmacy-no-print {
+    display: none !important;
+  }
+
+  .pharmacy-receipt-container {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+  }
+}
+
+.pharmacy-receipt-container {
+  max-width: 680px;
+  margin: 1.5rem auto 0;
+  padding: 2rem;
+  background-color: #ffffff;
+  border: 1px dashed var(--line, #dce7e7);
+  border-radius: 0.75rem;
+}
+
+.pharmacy-receipt-header {
+  border-bottom: 2px solid var(--teal, #0f8b8d);
+  padding-bottom: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.pharmacy-receipt-meta {
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+.pharmacy-receipt-unpaid-notice {
+  background-color: #fff3cd;
+  color: #664d03;
+  border: 1px solid #ffe69c;
+  padding: 0.5rem 1rem;
+  border-radius: 0.375rem;
+  font-weight: 600;
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.pharmacy-receipt-footer {
+  border-top: 1px solid var(--line, #dce7e7);
+  padding-top: 1rem;
+  margin-top: 1.5rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted, #6c7c80);
+}

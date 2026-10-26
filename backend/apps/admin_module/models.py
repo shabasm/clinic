@@ -289,6 +289,7 @@ class Prescription(models.Model):
     doctor = models.ForeignKey(DoctorProfile, on_delete=models.PROTECT, related_name="prescriptions")
     date = models.DateField(auto_now_add=True)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.PENDING)
+    dispensed_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"Prescription {self.pk} - {self.patient}"
@@ -484,6 +485,13 @@ class PharmacyBill(BaseBill):
 
 class PharmacyBillItem(models.Model):
     bill = models.ForeignKey(PharmacyBill, on_delete=models.CASCADE, related_name="items")
+    prescription_item = models.ForeignKey(
+        PrescriptionItem,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="bill_items",
+    )
     medicine = models.ForeignKey(Medicine, on_delete=models.PROTECT)
     medicine_name = models.CharField(max_length=100)
     quantity = models.PositiveIntegerField()
