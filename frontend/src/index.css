@@ -198,3 +198,46 @@ body {
   color: #fff;
   font-size: 1.4rem;
 }
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .modal,
+  .modal *,
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .modal {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+
+  .modal-dialog {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .modal-content {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .modal-body {
+    padding: 0 !important;
+  }
+
+  .modal-backdrop {
+    display: none !important;
+  }
+}
