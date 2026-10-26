@@ -21,17 +21,16 @@ from apps.admin_module.models import (
 # =========================================================
 
 def validate_person_name(value):
-    value = value.strip()
+    value = " ".join(value.split())
 
-    if len(value) < 2:
+    if sum(character.isalpha() for character in value) < 3:
         raise serializers.ValidationError(
-            "Name must contain at least 2 characters."
+            "Name must contain at least 3 letters."
         )
 
-    if not re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ .'-]+", value):
+    if not all(character.isalpha() or character == " " for character in value):
         raise serializers.ValidationError(
-            "Name can contain letters, spaces, dots, apostrophes "
-            "and hyphens only."
+            "Name can contain letters and spaces only."
         )
 
     return value
@@ -40,16 +39,9 @@ def validate_person_name(value):
 def validate_phone_number(value):
     value = value.strip()
 
-    if not re.fullmatch(r"\+?[0-9][0-9 ]{8,14}", value):
+    if not re.fullmatch(r"[6-9][0-9]{9}", value):
         raise serializers.ValidationError(
-            "Enter a valid phone number."
-        )
-
-    digits = re.sub(r"\D", "", value)
-
-    if not 10 <= len(digits) <= 15:
-        raise serializers.ValidationError(
-            "Phone number must contain between 10 and 15 digits."
+            "Enter a valid 10-digit Indian mobile number starting with 6-9."
         )
 
     return value
