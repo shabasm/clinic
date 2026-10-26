@@ -18,7 +18,7 @@ function PharmacyNavbar() {
   };
 
   return (
-    <nav className="navbar navbar-expand-xl navbar-dark pharmacy-no-print">
+    <nav className="navbar navbar-expand-xl navbar-dark pharmacy-no-print d-print-none">
       <div className="container-xl">
         <NavLink className="navbar-brand fw-bold" to="/pharmacy/dashboard">
           ✚ CareFlow

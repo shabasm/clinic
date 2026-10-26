@@ -83,7 +83,7 @@ function BillDetails() {
       <>
         <PharmacyNavbar />
         <main className="container admin-main">
-          <header className="page-header pharmacy-no-print">
+          <header className="page-header pharmacy-no-print d-print-none">
             <h1 className="mb-1">Bill details</h1>
             <p className="mb-0">Loading bill record...</p>
           </header>
@@ -98,7 +98,7 @@ function BillDetails() {
       <>
         <PharmacyNavbar />
         <main className="container admin-main">
-          <header className="page-header pharmacy-no-print">
+          <header className="page-header pharmacy-no-print d-print-none">
             <h1 className="mb-1">Bill details</h1>
             <p className="mb-0">Bill not found.</p>
           </header>
@@ -119,7 +119,7 @@ function BillDetails() {
     <>
       <PharmacyNavbar />
       <main className="container admin-main">
-        <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3 pharmacy-no-print">
+        <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3 pharmacy-no-print d-print-none">
           <div>
             <h1 className="mb-1">Bill {formatId("BILL", bill.id)}</h1>
             <p className="mb-0">Pharmacy billing and receipt record.</p>
@@ -139,18 +139,18 @@ function BillDetails() {
         </header>
 
         {error && !activeModal && (
-          <div className="alert alert-danger pharmacy-no-print" role="alert">
+          <div className="alert alert-danger pharmacy-no-print d-print-none" role="alert">
             {error}
           </div>
         )}
         {success && (
-          <div className="alert alert-success pharmacy-no-print" role="status">
+          <div className="alert alert-success pharmacy-no-print d-print-none" role="status">
             {success}
           </div>
         )}
 
         {/* Bill summary and lines card */}
-        <div className="card mb-4 pharmacy-no-print">
+        <div className="card mb-4 pharmacy-no-print d-print-none">
           <div className="card-body">
             <div className="row g-3 mb-4">
               <div className="col-md-3 col-6">
