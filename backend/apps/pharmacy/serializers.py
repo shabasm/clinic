@@ -96,6 +96,16 @@ class MedicineRequestSerializer(serializers.ModelSerializer):
     def validate_medicine(self, medicine):
         if not medicine.is_active:
             raise serializers.ValidationError("This medicine is inactive.")
+        # Only ask for stock when it is really needed.
+        if medicine.stock_state == "In stock":
+            raise serializers.ValidationError(
+                "Stock is not low. Request only low, out of stock or expired medicines."
+            )
+        # One pending request per medicine.
+        if MedicineRequest.objects.filter(
+            medicine=medicine, status=MedicineRequest.Status.PENDING
+        ).exists():
+            raise serializers.ValidationError("A request for this medicine is already pending.")
         return medicine
 
 

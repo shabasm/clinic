@@ -10,6 +10,7 @@ from .views import (
     LabBillViewSet,
     LabOrderItemViewSet,
     LabOrderViewSet,
+    LabReportViewSet,
     LabResultViewSet,
     LabTestViewSet,
 )
@@ -19,6 +20,7 @@ router.register("tests", LabTestViewSet, basename="lab-test")
 router.register("orders", LabOrderViewSet, basename="lab-order")
 router.register("items", LabOrderItemViewSet, basename="lab-item")
 router.register("results", LabResultViewSet, basename="lab-result")
+router.register("reports", LabReportViewSet, basename="lab-report")
 router.register("bills", LabBillViewSet, basename="lab-bill")
 
 urlpatterns = [

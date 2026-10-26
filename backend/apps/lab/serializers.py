@@ -1,7 +1,7 @@
 """
 apps/lab/serializers.py
 
-Serializers for the Lab module: tests, orders, order items, results and bills.
+Serializers for the Lab module: tests, orders, order items, results, reports and bills.
 All models live in apps.admin_module, so they are imported from there.
 """
 import re
@@ -15,6 +15,7 @@ from apps.admin_module.models import (
     LabBillItem,
     LabOrder,
     LabOrderItem,
+    LabReport,
     LabResult,
     LabTest,
 )
@@ -78,6 +79,7 @@ class LabResultSerializer(serializers.ModelSerializer):
         model = LabResult
         fields = (
             "id",
+            "report",
             "order_item",
             "test_name",
             "result",
@@ -87,7 +89,7 @@ class LabResultSerializer(serializers.ModelSerializer):
             "technician_name",
             "result_date",
         )
-        read_only_fields = ("technician", "result_date")
+        read_only_fields = ("report", "technician", "result_date")
 
     # A result can only be entered for a test that has been paid and not yet finished.
     def validate_order_item(self, order_item):
@@ -100,7 +102,7 @@ class LabResultSerializer(serializers.ModelSerializer):
             )
         return order_item
 
-    # Saving a result also marks the test as Completed.
+    # Saving a result also marks the test as Completed and associates with LabReport.
     @transaction.atomic
     def create(self, validated_data):
         order_item = validated_data["order_item"]
@@ -109,16 +111,36 @@ class LabResultSerializer(serializers.ModelSerializer):
         if not validated_data.get("reference_range"):
             validated_data["reference_range"] = order_item.test.normal_values
 
+        # Ensure order has a LabReport and link this result to it
+        report, _ = LabReport.objects.get_or_create(lab_order=order_item.lab_order)
+        validated_data["report"] = report
+
         result = super().create(validated_data)
 
         order_item.status = LabOrderItem.Status.COMPLETED
         order_item.completed_date = timezone.localdate()
         order_item.save(update_fields=["status", "completed_date"])
+
+        # Update consolidated report status based on all accepted tests
+        accepted_items = order_item.lab_order.items.exclude(
+            status__in=[LabOrderItem.Status.DECLINED, LabOrderItem.Status.CANCELLED]
+        )
+        all_completed = (
+            accepted_items.exists()
+            and not accepted_items.exclude(status=LabOrderItem.Status.COMPLETED).exists()
+        )
+        if all_completed:
+            report.status = LabReport.Status.COMPLETED
+        else:
+            report.status = LabReport.Status.PARTIALLY_COMPLETED
+        report.save(update_fields=["status"])
+
         return result
 
     # The test a result belongs to cannot be changed once it is saved.
     def update(self, instance, validated_data):
         validated_data.pop("order_item", None)
+        validated_data.pop("report", None)
         return super().update(instance, validated_data)
 
 
@@ -139,13 +161,22 @@ class LabOrderItemSerializer(serializers.ModelSerializer):
             "cost",
             "status",
             "selected_date",
+            "declined_date",
             "paid_date",
             "completed_date",
             "result_details",
         )
         # test_name and cost are copied from the LabTest when the item is created,
-        # and status only changes through the dedicated serializers and actions.
-        read_only_fields = ("test_name", "cost", "status")
+        # and status changes through dedicated actions.
+        read_only_fields = (
+            "test_name",
+            "cost",
+            "status",
+            "selected_date",
+            "declined_date",
+            "paid_date",
+            "completed_date",
+        )
 
     def create(self, validated_data):
         test = validated_data["test"]
@@ -154,7 +185,7 @@ class LabOrderItemSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
-# Used when the technician starts working on a test (Paid -> In Progress).
+# Used for transitions like Recommended -> Selected / Declined, and Paid -> In Progress.
 class LabItemStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabOrderItem
@@ -163,7 +194,16 @@ class LabItemStatusSerializer(serializers.ModelSerializer):
     def validate_status(self, new_status):
         current = self.instance.status
         allowed = {
-            LabOrderItem.Status.PAID: {LabOrderItem.Status.IN_PROGRESS},
+            LabOrderItem.Status.RECOMMENDED: {
+                LabOrderItem.Status.SELECTED,
+                LabOrderItem.Status.DECLINED,
+            },
+            LabOrderItem.Status.SELECTED: {
+                LabOrderItem.Status.DECLINED,
+            },
+            LabOrderItem.Status.PAID: {
+                LabOrderItem.Status.IN_PROGRESS,
+            },
             # Completed is set by saving a result, not by this serializer.
         }
         if new_status not in allowed.get(current, set()):
@@ -171,6 +211,43 @@ class LabItemStatusSerializer(serializers.ModelSerializer):
                 f"A test that is '{current}' cannot be changed to '{new_status}'."
             )
         return new_status
+
+
+# ---------------------------------------------------------------------------
+# Lab reports (one consolidated report per LabOrder)
+# ---------------------------------------------------------------------------
+class LabReportSerializer(serializers.ModelSerializer):
+    patient_name = serializers.CharField(source="lab_order.patient.full_name", read_only=True)
+    doctor_name = serializers.CharField(source="lab_order.doctor.staff.full_name", read_only=True)
+    released_by_name = serializers.CharField(source="released_by.full_name", read_only=True)
+    order_date = serializers.DateField(source="lab_order.date", read_only=True)
+    results = LabResultSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = LabReport
+        fields = (
+            "id",
+            "lab_order",
+            "patient_name",
+            "doctor_name",
+            "order_date",
+            "status",
+            "released_at",
+            "released_by",
+            "released_by_name",
+            "summary_notes",
+            "created_at",
+            "updated_at",
+            "results",
+        )
+        read_only_fields = (
+            "lab_order",
+            "status",
+            "released_at",
+            "released_by",
+            "created_at",
+            "updated_at",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +259,8 @@ class LabOrderSerializer(serializers.ModelSerializer):
     # overall_status is calculated on the model from its tests, never stored.
     overall_status = serializers.ReadOnlyField()
     items = LabOrderItemSerializer(many=True, read_only=True)
+    report_id = serializers.IntegerField(source="report.id", read_only=True)
+    report_status = serializers.CharField(source="report.status", read_only=True)
 
     class Meta:
         model = LabOrder
@@ -194,6 +273,8 @@ class LabOrderSerializer(serializers.ModelSerializer):
             "doctor_name",
             "date",
             "overall_status",
+            "report_id",
+            "report_status",
             "items",
         )
         read_only_fields = ("date",)
@@ -205,7 +286,17 @@ class LabOrderSerializer(serializers.ModelSerializer):
 class LabBillItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = LabBillItem
-        fields = ("id", "bill", "test", "test_name", "quantity", "unit_price", "line_total")
+        fields = (
+            "id",
+            "bill",
+            "order_item",
+            "test",
+            "test_name",
+            "quantity",
+            "unit_price",
+            "line_total",
+        )
+        read_only_fields = ("bill",)
 
 
 class LabBillSerializer(serializers.ModelSerializer):
@@ -239,7 +330,7 @@ class LabBillSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("A paid bill cannot be set back to Pending.")
         return new_status
 
-    # Marking a bill as Paid also marks its tests as Paid.
+    # Marking a bill as Paid also marks its accepted tests as Paid.
     @transaction.atomic
     def update(self, instance, validated_data):
         was_pending = instance.payment_status == LabBill.PaymentStatus.PENDING
@@ -249,9 +340,21 @@ class LabBillSerializer(serializers.ModelSerializer):
             bill.paid_at = timezone.now()
             bill.save(update_fields=["paid_at"])
 
-            billed_test_ids = bill.items.values_list("test_id", flat=True)
-            bill.lab_order.items.filter(
-                test_id__in=billed_test_ids,
-                status=LabOrderItem.Status.SELECTED,
-            ).update(status=LabOrderItem.Status.PAID, paid_date=timezone.localdate())
+            # Use direct order_item FK if populated, falling back to test_id
+            billed_order_item_ids = [
+                item.order_item_id
+                for item in bill.items.all()
+                if item.order_item_id is not None
+            ]
+            if billed_order_item_ids:
+                bill.lab_order.items.filter(
+                    id__in=billed_order_item_ids,
+                    status=LabOrderItem.Status.SELECTED,
+                ).update(status=LabOrderItem.Status.PAID, paid_date=timezone.localdate())
+            else:
+                billed_test_ids = bill.items.values_list("test_id", flat=True)
+                bill.lab_order.items.filter(
+                    test_id__in=billed_test_ids,
+                    status=LabOrderItem.Status.SELECTED,
+                ).update(status=LabOrderItem.Status.PAID, paid_date=timezone.localdate())
         return bill
