@@ -12,6 +12,11 @@
     margin: 0 !important;
     width: 100% !important;
   }
+
+  /* Instruction slip: hidden on screen, visible when printing */
+  .pharmacy-instruction-slip {
+    display: block !important;
+  }
 }
 
 .pharmacy-receipt-container {
@@ -52,4 +57,9 @@
   text-align: center;
   font-size: 0.85rem;
   color: var(--muted, #6c7c80);
+}
+
+/* Instruction slip — hidden on screen by default, shown only when printing */
+.pharmacy-instruction-slip {
+  display: none;
 }

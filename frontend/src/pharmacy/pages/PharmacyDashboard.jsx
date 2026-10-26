@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { errorMessage, formatDate } from "../../admin/services/api";
+import { errorMessage, formatDate, formatMoney } from "../../admin/services/api";
 import PharmacyNavbar from "../components/PharmacyNavbar";
 import { getDashboard, getMedicines } from "../services/pharmacyApi";
 
@@ -52,6 +52,11 @@ function PharmacyDashboard() {
     {
       label: "Bills Today",
       value: dashboard?.bills_today,
+      link: "/pharmacy/bills",
+    },
+    {
+      label: "Daily Revenue",
+      value: formatMoney(dashboard?.revenue_today ?? 0),
       link: "/pharmacy/bills",
     },
     {

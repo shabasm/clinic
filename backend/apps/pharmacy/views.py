@@ -16,6 +16,7 @@ from decimal import Decimal
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Sum
 from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
@@ -99,6 +100,7 @@ class PharmacyDashboardView(APIView):
                 status=Prescription.Status.DISPENSED, dispensed_at__date=today
             ).count(),
             "bills_today": PharmacyBill.objects.filter(created_at__date=today).count(),
+            "revenue_today": str(PharmacyBill.objects.filter(created_at__date=today, payment_status=PharmacyBill.PaymentStatus.PAID).aggregate(t=Sum("total"))["t"] or 0),
             "low_stock_medicines": low_stock,
             "out_of_stock_medicines": out_of_stock,
             "expired_medicines": expired,
