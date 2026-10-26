@@ -10,6 +10,11 @@ from .views import (
     LabTestViewSet,
     MedicineRequestViewSet,
     SettingsViewSet,
+    CurrentUserView,
+    StaffCredentialsView,
+    StaffCredentialsUpdateView,
+    StaffPasswordResetView,
+    AdminDashboardView
 )
 
 router = DefaultRouter()
@@ -23,4 +28,14 @@ router.register('settings', SettingsViewSet)
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('me/', CurrentUserView.as_view(), name='current-user'),
+     path('staff-credentials/', StaffCredentialsView.as_view(), name='staff-credentials'),
+    path('staff-credentials-update/', StaffCredentialsUpdateView.as_view(), name='staff-credentials-update'),
+
+    path(
+        'staff-password-reset/',StaffPasswordResetView.as_view(),name='staff-password-reset'
+    ),
+    path(
+        'dashboard/',AdminDashboardView.as_view(),name='admin-dashboard'
+    ),
 ]
