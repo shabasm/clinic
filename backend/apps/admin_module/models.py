@@ -121,7 +121,7 @@ class Booking(models.Model):
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="bookings")
     doctor = models.ForeignKey("DoctorProfile", on_delete=models.PROTECT, related_name="bookings")
     date = models.DateField()
-    reserved_token_number = models.PositiveIntegerField()
+    reserved_token_number = models.PositiveIntegerField(null=True, blank=True)
     status = models.CharField(max_length=12, choices=Status.choices, default=Status.RESERVED)
     created_at = models.DateTimeField(auto_now_add=True)
     cancelled_date = models.DateField(null=True, blank=True)
@@ -467,15 +467,35 @@ class BaseBill(models.Model):
 
 
 class RegistrationBill(BaseBill):
-    # One per patient, created on the patient's first paid visit.
+    class PaymentMethod(models.TextChoices):
+        CASH = "Cash", "Cash"
+        CARD = "Card", "Card"
+        UPI = "UPI", "UPI"
+
+    # One registration bill per patient; charged once.
     patient = models.OneToOneField(Patient, on_delete=models.PROTECT)
     registration_fee = models.DecimalField(max_digits=8, decimal_places=2)
+    payment_method = models.CharField(max_length=10, choices=PaymentMethod.choices, blank=True)
+    paid_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="registration_payments",
+    )
 
 
 class ConsultationBill(BaseBill):
+    class PaymentMethod(models.TextChoices):
+        CASH = "Cash", "Cash"
+        CARD = "Card", "Card"
+        UPI = "UPI", "UPI"
+
     doctor = models.ForeignKey(DoctorProfile, on_delete=models.PROTECT)
     token = models.OneToOneField(Token, on_delete=models.PROTECT, related_name="bill")
     consultation_fee = models.DecimalField(max_digits=8, decimal_places=2)
+    payment_method = models.CharField(max_length=10, choices=PaymentMethod.choices, blank=True)
+    paid_by = models.ForeignKey(
+        "auth.User", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="consultation_payments",
+    )
 
 
 class PharmacyBill(BaseBill):

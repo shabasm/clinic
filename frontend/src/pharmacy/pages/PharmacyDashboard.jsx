@@ -74,11 +74,6 @@ function PharmacyDashboard() {
       value: dashboard?.expired_medicines,
       link: "/pharmacy/inventory?stock=expired",
     },
-    {
-      label: "Pending Stock Requests",
-      value: dashboard?.pending_stock_requests,
-      link: "/pharmacy/stock-requests?status=Pending",
-    },
   ];
 
   return (
@@ -87,7 +82,6 @@ function PharmacyDashboard() {
       <main className="container admin-main">
         <header className="page-header">
           <h1 className="mb-1">Pharmacy dashboard</h1>
-          <p className="mb-0">Live numbers from the clinic records.</p>
         </header>
 
         {error && (

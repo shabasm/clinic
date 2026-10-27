@@ -210,7 +210,7 @@ function Doctors() {
           </AdminModal>
         )}
         <div className="d-flex flex-wrap toolbar mb-3">
-          <div className="input-group w-auto flex-grow-1"><span className="input-group-text">Search</span><input className="form-control" type="search" placeholder="Name, specialization or license" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
+          <div className="input-group w-auto flex-grow-1"><span className="input-group-text">Search</span><input className="form-control" type="search" placeholder="Name, Department and license" value={search} onChange={(event) => setSearch(event.target.value)} /></div>
           <select className="form-select w-auto" aria-label="All availability" value={availability} onChange={(event) => setAvailability(event.target.value)}><option value="">All availability</option><option value="true">Available</option><option value="false">Unavailable</option></select>
         </div>
         <div className="card"><div className="table-responsive">
