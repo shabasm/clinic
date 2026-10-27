@@ -1,49 +1,17 @@
-from django.urls import path
+from django.urls import include, path
+from rest_framework.routers import DefaultRouter
 
-from . import views
+from .views import ActivatePaidTokenView, BookingViewSet, CollectConsultationPaymentView, DoctorViewSet, PatientViewSet, ReceptionDashboardView, WalkInView
+
+router = DefaultRouter()
+router.register("patients", PatientViewSet, basename="reception-patient")
+router.register("doctors", DoctorViewSet, basename="reception-doctor")
+router.register("bookings", BookingViewSet, basename="reception-booking")
 
 urlpatterns = [
-    # Patients
-    path("patients/", views.patient_list_create, name="patient-list-create"),
-    path("patients/<int:pk>/", views.patient_detail, name="patient-detail"),
-
-    # Doctors
-    path("doctors/", views.doctor_list, name="doctor-list"),
-
-    # Appointments
-    path("bookings/", views.booking_list_create, name="booking-list-create"),
-
-    # Registration billing
-    path(
-        "registration-bills/",
-        views.registration_bill_list_create,
-        name="registration-bill-list-create",
-    ),
-    path(
-        "registration-bills/<int:bill_id>/pay/",
-        views.registration_bill_pay,
-        name="registration-bill-pay",
-    ),
-
-    # Tokens
-    path("tokens/", views.token_list, name="token-list"),
-
-    # Consultations
-    path(
-        "consultations/",
-        views.consultation_list_create,
-        name="consultation-list-create",
-    ),
-    path(
-        "consultations/<int:consultation_id>/complete/",
-        views.consultation_complete,
-        name="consultation-complete",
-    ),
-
-    # Consultation billing
-    path(
-        "consultation-bills/<int:bill_id>/pay/",
-        views.consultation_bill_pay,
-        name="consultation-bill-pay",
-    ),
+    path("dashboard/", ReceptionDashboardView.as_view(), name="reception-dashboard"),
+    path("walk-ins/", WalkInView.as_view(), name="reception-walk-in"),
+    path("tokens/<int:token_id>/collect-payment/", CollectConsultationPaymentView.as_view(), name="reception-collect-consultation-payment"),
+    path("tokens/<int:token_id>/activate/", ActivatePaidTokenView.as_view(), name="reception-activate-paid-token"),
+    path("", include(router.urls)),
 ]

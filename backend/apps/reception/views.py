@@ -1,629 +1,295 @@
-from datetime import date
-from decimal import Decimal
-
-from django.db import IntegrityError, transaction
-from django.db.models import Max
-from django.shortcuts import get_object_or_404
+from django.db import transaction
+from django.db.models import Max, Q
 from django.utils import timezone
-
-from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from apps.admin_module.models import (
-    Settings,
-    Staff,
-    Patient,
-    DoctorProfile,
-    Booking,
-    Token,
-    RegistrationBill,
-    Consultation,
-    ConsultationBill,
-)
-
-from .serializers import (
-    PatientSerializer,
-    DoctorSerializer,
-    BookingSerializer,
-    TokenSerializer,
-    RegistrationBillSerializer,
-    ConsultationSerializer,
-    ConsultationBillSerializer,
-)
+from apps.admin_module.models import Booking, ConsultationBill, Consultation, DoctorProfile, Patient, RegistrationBill, Settings, Token
+from .permissions import IsReceptionist
+from .serializers import BookingSerializer, PatientSerializer, ReceptionDoctorSerializer, WalkInSerializer
 
 
-# ---------------------------------------------------------
-# PATIENTS: LIST, CREATE, RETRIEVE, UPDATE, DELETE
-# ---------------------------------------------------------
+class PatientViewSet(
+    mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin, viewsets.GenericViewSet
+):
+    serializer_class = PatientSerializer
+    permission_classes = [IsAuthenticated, IsReceptionist]
+    search_fields = ["full_name", "phone"]
 
-@api_view(["GET", "POST"])
-def patient_list_create(request):
-    if request.method == "GET":
-        patients = Patient.objects.filter(is_active=True).order_by("-id")
-        serializer = PatientSerializer(patients, many=True)
-        return Response(serializer.data)
+    def get_queryset(self):
+        queryset = Patient.objects.filter(is_active=True).prefetch_related("bookings", "consultations").order_by("full_name")
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            from django.db.models import Q
+            criteria = Q(full_name__icontains=search) | Q(phone__icontains=search)
+            if search.isdigit():
+                criteria |= Q(pk=search)
+            queryset = queryset.filter(criteria)
+        return queryset
 
-    serializer = PatientSerializer(data=request.data)
-
-    if serializer.is_valid():
-        patient = serializer.save()
-        return Response(
-            PatientSerializer(patient).data,
-            status=status.HTTP_201_CREATED,
+    @action(detail=True, methods=["post"], url_path="collect-registration-payment")
+    @transaction.atomic
+    def collect_registration_payment(self, request, pk=None):
+        patient = self.get_object()
+        method = request.data.get("payment_method")
+        if method not in RegistrationBill.PaymentMethod.values:
+            return Response({"payment_method": "Choose Cash, Card, or UPI."}, status=status.HTTP_400_BAD_REQUEST)
+        bill, _ = RegistrationBill.objects.select_for_update().get_or_create(
+            patient=patient,
+            defaults={"registration_fee": Settings.load().registration_fee, "total": Settings.load().registration_fee},
         )
-
-    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-@api_view(["GET", "PUT", "PATCH", "DELETE"])
-def patient_detail(request, pk):
-    patient = get_object_or_404(Patient, pk=pk)
-
-    if request.method == "GET":
-        return Response(PatientSerializer(patient).data)
-
-    if request.method in ["PUT", "PATCH"]:
-        serializer = PatientSerializer(
-            patient,
-            data=request.data,
-            partial=(request.method == "PATCH"),
-        )
-
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-
-        return Response(
-            serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # Use soft deletion so existing appointments and bills retain history.
-    patient.is_active = False
-    patient.save(update_fields=["is_active"])
-    return Response(status=status.HTTP_204_NO_CONTENT)
-
-
-# ---------------------------------------------------------
-# DOCTORS: LIST ACTIVE DOCTORS
-# ---------------------------------------------------------
-
-@api_view(["GET"])
-def doctor_list(request):
-    doctors = (
-        DoctorProfile.objects
-        .filter(is_active=True, staff__is_active=True,
-                staff__role=Staff.Role.DOCTOR)
-        .select_related("staff", "department")
-        .order_by("staff__full_name")
-    )
-
-    serializer = DoctorSerializer(doctors, many=True)
-    return Response(serializer.data)
-
-
-# ---------------------------------------------------------
-# BOOKINGS: CREATE AND LIST APPOINTMENTS
-# ---------------------------------------------------------
-
-@api_view(["GET", "POST"])
-def booking_list_create(request):
-    if request.method == "GET":
-        bookings = (
-            Booking.objects
-            .select_related("patient", "doctor", "doctor__staff")
-            .order_by("-date", "-id")
-        )
-
-        patient_id = request.query_params.get("patient")
-        doctor_id = request.query_params.get("doctor")
-        booking_date = request.query_params.get("date")
-
-        if patient_id:
-            bookings = bookings.filter(patient_id=patient_id)
-
-        if doctor_id:
-            bookings = bookings.filter(doctor_id=doctor_id)
-
-        if booking_date:
-            bookings = bookings.filter(date=booking_date)
-
-        return Response(BookingSerializer(bookings, many=True).data)
-
-    serializer = BookingSerializer(data=request.data)
-
-    if not serializer.is_valid():
-        return Response(
-            serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    patient = serializer.validated_data["patient"]
-    doctor = serializer.validated_data["doctor"]
-    booking_date = serializer.validated_data["date"]
-
-    if not patient.is_active:
-        return Response(
-            {"error": "Cannot book an appointment for an inactive patient."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if not doctor.is_active or not doctor.staff.is_active:
-        return Response(
-            {"error": "The selected doctor is inactive."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if doctor.staff.role != Staff.Role.DOCTOR:
-        return Response(
-            {"error": "The selected staff member is not a doctor."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if booking_date < timezone.localdate():
-        return Response(
-            {"error": "Appointment date cannot be in the past."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    # Validate the doctor's scheduled consultation days if configured.
-    if doctor.consultation_days:
-        weekday = booking_date.strftime("%A")
-        if weekday not in doctor.consultation_days:
-            return Response(
-                {
-                    "error": (
-                        f"This doctor does not have consultations scheduled "
-                        f"for {weekday}."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-    # Require the patient's registration bill to be paid before booking.
-    registration_bill = RegistrationBill.objects.filter(
-        patient=patient,
-        payment_status=RegistrationBill.PaymentStatus.PAID,
-    ).first()
-
-    if registration_bill is None:
-        return Response(
-            {
-                "error": (
-                    "The patient's registration bill must be paid "
-                    "before an appointment can be booked."
-                )
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    try:
-        with transaction.atomic():
-            # Count only the doctor's non-cancelled reservations for that date.
-            last_number = (
-                Booking.objects
-                .filter(doctor=doctor, date=booking_date)
-                .exclude(status=Booking.Status.CANCELLED)
-                .aggregate(max_number=Max("reserved_token_number"))
-                ["max_number"]
-            )
-
-            next_number = (last_number or 0) + 1
-
-            # Business rule: maximum 30 reservations per doctor per day.
-            if next_number > 30:
-                return Response(
-                    {
-                        "error": (
-                            "This doctor has reached the limit of "
-                            "30 appointments for this date."
-                        )
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            booking = Booking.objects.create(
-                patient=patient,
-                doctor=doctor,
-                date=booking_date,
-                reserved_token_number=next_number,
-                status=Booking.Status.RESERVED,
-            )
-
-    except IntegrityError:
-        return Response(
-            {
-                "error": (
-                    "Could not reserve this appointment number. "
-                    "Please try again."
-                )
-            },
-            status=status.HTTP_409_CONFLICT,
-        )
-
-    return Response(
-        BookingSerializer(booking).data,
-        status=status.HTTP_201_CREATED,
-    )
-
-
-# ---------------------------------------------------------
-# REGISTRATION BILL: CREATE OR GET
-# ---------------------------------------------------------
-
-@api_view(["GET", "POST"])
-def registration_bill_list_create(request):
-    if request.method == "GET":
-        bills = (
-            RegistrationBill.objects
-            .select_related("patient")
-            .order_by("-created_at")
-        )
-
-        patient_id = request.query_params.get("patient")
-        if patient_id:
-            bills = bills.filter(patient_id=patient_id)
-
-        return Response(
-            RegistrationBillSerializer(bills, many=True).data
-        )
-
-    patient_id = request.data.get("patient")
-
-    if not patient_id:
-        return Response(
-            {"patient": "This field is required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    patient = get_object_or_404(Patient, pk=patient_id, is_active=True)
-
-    # The model allows one registration bill per patient.
-    existing_bill = RegistrationBill.objects.filter(patient=patient).first()
-    if existing_bill:
-        return Response(
-            RegistrationBillSerializer(existing_bill).data,
-            status=status.HTTP_200_OK,
-        )
-
-    settings = Settings.load()
-    fee = settings.registration_fee
-
-    bill = RegistrationBill.objects.create(
-        patient=patient,
-        registration_fee=fee,
-        total=fee,
-        payment_status=RegistrationBill.PaymentStatus.PENDING,
-    )
-
-    return Response(
-        RegistrationBillSerializer(bill).data,
-        status=status.HTTP_201_CREATED,
-    )
-
-
-# ---------------------------------------------------------
-# PAY REGISTRATION BILL
-# Marking as paid creates tokens for eligible future bookings.
-# ---------------------------------------------------------
-
-@api_view(["POST"])
-def registration_bill_pay(request, bill_id):
-    with transaction.atomic():
-        bill = get_object_or_404(
-            RegistrationBill.objects.select_for_update(),
-            pk=bill_id,
-        )
-
-        if bill.payment_status == RegistrationBill.PaymentStatus.PAID:
-            return Response(
-                {
-                    "message": "Registration bill is already paid.",
-                    "bill": RegistrationBillSerializer(bill).data,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        bill.payment_status = RegistrationBill.PaymentStatus.PAID
+        if bill.payment_status == bill.PaymentStatus.PAID:
+            return Response({"detail": "Registration fee has already been paid."}, status=status.HTTP_400_BAD_REQUEST)
+        bill.payment_status = bill.PaymentStatus.PAID
+        bill.payment_method = method
+        bill.paid_by = request.user
         bill.paid_at = timezone.now()
-        bill.save(update_fields=["payment_status", "paid_at"])
-
-        bookings = (
-            Booking.objects
-            .select_for_update()
-            .filter(
-                patient=bill.patient,
-                status=Booking.Status.RESERVED,
-            )
-            .select_related("doctor")
-            .order_by("date", "reserved_token_number")
-        )
-
-        created_tokens = []
-
-        for booking in bookings:
-            # Do not create a token for a past appointment or inactive doctor.
-            if booking.date < timezone.localdate():
-                continue
-
-            if not booking.doctor.is_active or not booking.doctor.staff.is_active:
-                continue
-
-            # Avoid duplicate tokens for the same booking.
-            if Token.objects.filter(source_booking=booking).exists():
-                continue
-
-            last_token = (
-                Token.objects
-                .filter(doctor=booking.doctor, date=booking.date)
-                .aggregate(max_number=Max("token_number"))
-                ["max_number"]
-            )
-
-            next_token_number = (last_token or 0) + 1
-
-            if next_token_number > 30:
-                continue
-
-            token = Token.objects.create(
-                doctor=booking.doctor,
-                patient=booking.patient,
-                date=booking.date,
-                token_number=next_token_number,
-                token_type=Token.Type.BOOKING,
-                source_booking=booking,
-                status=Token.Status.RESERVED,
-            )
-
-            booking.status = Booking.Status.ACTIVATED
-            booking.activated_date = timezone.localdate()
-            booking.save(update_fields=["status", "activated_date"])
-
-            created_tokens.append(token)
-
-    return Response(
-        {
-            "message": "Registration bill paid successfully.",
-            "bill": RegistrationBillSerializer(bill).data,
-            "tokens_created": TokenSerializer(
-                created_tokens,
-                many=True,
-            ).data,
-        },
-        status=status.HTTP_200_OK,
-    )
+        bill.save(update_fields=["payment_status", "payment_method", "paid_by", "paid_at"])
+        issued = []
+        for booking in Booking.objects.select_for_update().filter(patient=patient, date=timezone.localdate(), status=Booking.Status.RESERVED):
+            token = issue_token(patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
+            issued.append(token.token_number)
+        return Response({"payment_status": bill.payment_status, "amount": str(bill.total), "payment_method": method, "token_numbers": issued})
 
 
-# ---------------------------------------------------------
-# TOKENS: LIST
-# ---------------------------------------------------------
+class DoctorViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    serializer_class = ReceptionDoctorSerializer
+    permission_classes = [IsAuthenticated, IsReceptionist]
 
-@api_view(["GET"])
-def token_list(request):
-    tokens = (
-        Token.objects
-        .select_related("patient", "doctor", "doctor__staff")
-        .order_by("date", "token_number")
-    )
-
-    patient_id = request.query_params.get("patient")
-    doctor_id = request.query_params.get("doctor")
-    token_date = request.query_params.get("date")
-
-    if patient_id:
-        tokens = tokens.filter(patient_id=patient_id)
-
-    if doctor_id:
-        tokens = tokens.filter(doctor_id=doctor_id)
-
-    if token_date:
-        tokens = tokens.filter(date=token_date)
-
-    return Response(TokenSerializer(tokens, many=True).data)
+    def get_queryset(self):
+        return DoctorProfile.objects.filter(
+            is_active=True, staff__is_active=True
+        ).select_related("staff", "department").order_by("staff__full_name")
 
 
-# ---------------------------------------------------------
-# CONSULTATIONS: LIST AND CREATE
-# A consultation must belong to an existing token.
-# ---------------------------------------------------------
+class BookingViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin,
+                     mixins.UpdateModelMixin, viewsets.GenericViewSet):
+    serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated, IsReceptionist]
 
-@api_view(["GET", "POST"])
-def consultation_list_create(request):
-    if request.method == "GET":
-        consultations = (
-            Consultation.objects
-            .select_related("token", "patient", "doctor", "doctor__staff")
-            .order_by("-created_at")
-        )
+    def get_queryset(self):
+        queryset = Booking.objects.select_related("patient", "doctor__staff").prefetch_related("tokens")
+        date = self.request.query_params.get("date")
+        if date:
+            queryset = queryset.filter(date=date)
+        doctor = self.request.query_params.get("doctor")
+        if doctor:
+            queryset = queryset.filter(doctor_id=doctor)
+        return queryset.order_by("date", "doctor__staff__full_name", "reserved_token_number")
 
-        token_id = request.query_params.get("token")
-        if token_id:
-            consultations = consultations.filter(token_id=token_id)
+    @transaction.atomic
+    def perform_create(self, serializer):
+        doctor = serializer.validated_data["doctor"]
+        date = serializer.validated_data["date"]
+        booking = serializer.save(reserved_token_number=None)
+        bill = RegistrationBill.objects.filter(patient=booking.patient).first()
+        if bill and bill.payment_status == bill.PaymentStatus.PAID and date == timezone.localdate():
+            issue_token(booking.patient, doctor, date, Token.Type.BOOKING, booking)
 
-        return Response(
-            ConsultationSerializer(consultations, many=True).data
-        )
+    @transaction.atomic
+    def perform_update(self, serializer):
+        booking = self.get_object()
+        old_date, old_doctor = booking.date, booking.doctor
+        booking = serializer.save()
+        if booking.date != old_date or booking.doctor_id != old_doctor.id:
+            booking.tokens.filter(status=Token.Status.RESERVED).update(status=Token.Status.CANCELLED)
+            booking.reserved_token_number = None
+            booking.save(update_fields=["reserved_token_number"])
+            bill = RegistrationBill.objects.filter(patient=booking.patient, payment_status=RegistrationBill.PaymentStatus.PAID).exists()
+            if bill and booking.date == timezone.localdate():
+                issue_token(booking.patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
 
-    token_id = request.data.get("token")
-    if not token_id:
-        return Response(
-            {"token": "This field is required."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def cancel(self, request, pk=None):
+        booking = self.get_object()
+        if booking.status in [Booking.Status.ACTIVATED, Booking.Status.COMPLETED, Booking.Status.CANCELLED]:
+            return Response({"detail": "This appointment can no longer be cancelled."}, status=status.HTTP_400_BAD_REQUEST)
+        booking.status = Booking.Status.CANCELLED
+        booking.cancelled_date = timezone.localdate()
+        booking.save(update_fields=["status", "cancelled_date"])
+        booking.tokens.filter(status=Token.Status.RESERVED).update(status=Token.Status.CANCELLED)
+        return Response(self.get_serializer(booking).data)
 
-    with transaction.atomic():
-        token = get_object_or_404(
-            Token.objects.select_for_update(),
-            pk=token_id,
-        )
+    @action(detail=True, methods=["post"], url_path="issue-token")
+    @transaction.atomic
+    def issue_token_action(self, request, pk=None):
+        booking = self.get_object()
+        if booking.status != Booking.Status.RESERVED or booking.date != timezone.localdate():
+            return Response({"detail": "Only today's reserved appointments can receive a token."}, status=status.HTTP_400_BAD_REQUEST)
+        bill = RegistrationBill.objects.filter(patient=booking.patient).first()
+        if not bill or bill.payment_status != bill.PaymentStatus.PAID:
+            return Response({"detail": "Collect the registration fee before issuing a token."}, status=status.HTTP_400_BAD_REQUEST)
+        token = issue_token(booking.patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
+        return Response({"token_number": token.token_number, "token_id": token.id}, status=status.HTTP_201_CREATED)
 
-        if token.status in [
-            Token.Status.CANCELLED,
-            Token.Status.SKIPPED,
-            Token.Status.COMPLETED,
-        ]:
-            return Response(
-                {"error": "This token cannot start a consultation."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
-        if hasattr(token, "consultation"):
-            return Response(
-                ConsultationSerializer(token.consultation).data,
-                status=status.HTTP_200_OK,
-            )
+class ReceptionDashboardView(APIView):
+    permission_classes = [IsAuthenticated, IsReceptionist]
 
+    def get(self, request):
+        today = timezone.localdate()
+        tokens = Token.objects.filter(date=today).select_related(
+            "patient", "patient__registrationbill", "doctor__staff", "doctor", "source_booking", "bill"
+        ).order_by("doctor__staff__full_name", "token_number")
+        queue = [{
+            "id": token.id,
+            "token_number": token.token_number,
+            "token_type": token.token_type,
+            "status": token.status,
+            "patient_id": token.patient_id,
+            "patient_name": token.patient.full_name,
+            "patient_phone": token.patient.phone,
+            "doctor_id": token.doctor_id,
+            "doctor_name": token.doctor.staff.full_name,
+            "booking_id": token.source_booking_id,
+            "consultation_fee": str(token.bill.total) if hasattr(token, "bill") else None,
+            "consultation_payment_status": token.bill.payment_status if hasattr(token, "bill") else "Not billed",
+            "registration_payment_status": token.patient.registrationbill.payment_status if hasattr(token.patient, "registrationbill") else "Pending",
+        } for token in tokens]
+        return Response({
+            "date": today,
+            "registration_fee": str(Settings.load().registration_fee),
+            "patients": Patient.objects.filter(is_active=True).count(),
+            "appointments_today": Booking.objects.filter(date=today).exclude(
+                status=Booking.Status.CANCELLED
+            ).count(),
+            "waiting_tokens": Token.objects.filter(date=today, status=Token.Status.ACTIVE).count(),
+            "completed_consultations": Consultation.objects.filter(status=Consultation.Status.COMPLETED, completed_at__date=today).count(),
+            "pending_registration_payments": Patient.objects.filter(is_active=True).filter(
+                Q(registrationbill__isnull=True) |
+                Q(registrationbill__payment_status=RegistrationBill.PaymentStatus.PENDING)
+            ).count(),
+            "pending_consultation_payments": ConsultationBill.objects.filter(payment_status=ConsultationBill.PaymentStatus.PENDING).count(),
+            "pending_consultation_bills": [{
+                "id": bill.id,
+                "token_id": bill.token_id,
+                "token_number": bill.token.token_number,
+                "patient_name": bill.patient.full_name,
+                "doctor_name": bill.doctor.staff.full_name,
+                "amount": str(bill.total),
+                "completed_at": bill.token.consultation.completed_at,
+            } for bill in ConsultationBill.objects.filter(
+                payment_status=ConsultationBill.PaymentStatus.PENDING,
+                token__consultation__status=Consultation.Status.COMPLETED,
+            ).select_related("patient", "doctor__staff", "token", "token__consultation").order_by("-created_at")],
+            "queue": queue,
+        })
+
+
+class WalkInView(APIView):
+    permission_classes = [IsAuthenticated, IsReceptionist]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = WalkInSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        patient = serializer.validated_data["patient"]
+        doctor = serializer.validated_data["doctor"]
+        today = timezone.localdate()
+        bill = RegistrationBill.objects.filter(patient=patient).first()
+        if not bill or bill.payment_status != bill.PaymentStatus.PAID:
+            return Response({"detail": "Collect the registration fee before adding a walk-in token."}, status=status.HTTP_400_BAD_REQUEST)
+        token = issue_token(patient, doctor, today, Token.Type.WALK_IN)
+        return Response({
+            "id": token.id,
+            "token_number": token.token_number,
+            "patient_name": patient.full_name,
+            "doctor_name": doctor.staff.full_name,
+            "status": token.status,
+        }, status=status.HTTP_201_CREATED)
+
+
+class CollectConsultationPaymentView(APIView):
+    permission_classes = [IsAuthenticated, IsReceptionist]
+
+    @transaction.atomic
+    def post(self, request, token_id):
+        try:
+            token = Token.objects.select_for_update().select_related("source_booking").get(pk=token_id)
+        except Token.DoesNotExist:
+            return Response({"detail": "Token not found."}, status=status.HTTP_404_NOT_FOUND)
+        consultation = getattr(token, "consultation", None)
+        if not consultation or consultation.status != Consultation.Status.COMPLETED:
+            return Response({"detail": "Consultation payment is available only after the doctor completes the visit."}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            bill = ConsultationBill.objects.select_for_update().get(token=token)
+        except ConsultationBill.DoesNotExist:
+            return Response({"detail": "Consultation bill is created only after the doctor completes the visit."}, status=status.HTTP_404_NOT_FOUND)
+        if bill.payment_status == bill.PaymentStatus.PAID:
+            return Response({"detail": "This consultation fee has already been collected."}, status=status.HTTP_400_BAD_REQUEST)
+        method = request.data.get("payment_method")
+        if method not in ConsultationBill.PaymentMethod.values:
+            return Response({"payment_method": "Choose Cash, Card, or UPI."}, status=status.HTTP_400_BAD_REQUEST)
+        bill.payment_status = bill.PaymentStatus.PAID
+        bill.payment_method = method
+        bill.paid_by = request.user
+        bill.paid_at = timezone.now()
+        bill.save(update_fields=["payment_status", "payment_method", "paid_by", "paid_at"])
+        return Response({
+            "token_id": token.id,
+            "token_number": token.token_number,
+            "payment_status": bill.payment_status,
+            "status": token.status,
+            "amount": str(bill.total),
+        })
+
+
+class ActivatePaidTokenView(APIView):
+    permission_classes = [IsAuthenticated, IsReceptionist]
+
+    @transaction.atomic
+    def post(self, request, token_id):
+        try:
+            token = Token.objects.select_for_update().select_related("patient", "source_booking").get(pk=token_id)
+        except Token.DoesNotExist:
+            return Response({"detail": "Token not found."}, status=status.HTTP_404_NOT_FOUND)
+        if token.date != timezone.localdate():
+            return Response({"detail": "Only today's token can be activated."}, status=status.HTTP_400_BAD_REQUEST)
+        bill = RegistrationBill.objects.filter(patient=token.patient).first()
+        if not bill or bill.payment_status != RegistrationBill.PaymentStatus.PAID:
+            return Response({"detail": "Confirm the registration payment before activating this token."}, status=status.HTTP_400_BAD_REQUEST)
+        if token.status == Token.Status.ACTIVE:
+            return Response({"token_number": token.token_number, "status": token.status})
+        if token.status != Token.Status.RESERVED:
+            return Response({"detail": "Only reserved tokens can be activated."}, status=status.HTTP_400_BAD_REQUEST)
         token.status = Token.Status.ACTIVE
         token.activated_at = timezone.now()
         token.save(update_fields=["status", "activated_at"])
+        if token.source_booking_id and token.source_booking.status == Booking.Status.RESERVED:
+            token.source_booking.status = Booking.Status.ACTIVATED
+            token.source_booking.activated_date = timezone.localdate()
+            token.source_booking.save(update_fields=["status", "activated_date"])
+        return Response({"token_number": token.token_number, "status": token.status})
 
-        consultation = Consultation.objects.create(
-            token=token,
-            patient=token.patient,
-            doctor=token.doctor,
-            diagnosis=request.data.get("diagnosis", ""),
-            clinical_notes=request.data.get("clinical_notes", ""),
-            status=Consultation.Status.IN_PROGRESS,
-        )
 
-    return Response(
-        ConsultationSerializer(consultation).data,
-        status=status.HTTP_201_CREATED,
+def issue_token(patient, doctor, date, token_type, booking=None):
+    doctor = DoctorProfile.objects.select_for_update().get(pk=doctor.pk)
+    if booking:
+        existing = Token.objects.filter(source_booking=booking).exclude(status=Token.Status.CANCELLED).first()
+        if existing:
+            if existing.status == Token.Status.RESERVED:
+                existing.status = Token.Status.ACTIVE
+                existing.activated_at = timezone.now()
+                existing.save(update_fields=["status", "activated_at"])
+            if booking.status == Booking.Status.RESERVED:
+                booking.status = Booking.Status.ACTIVATED
+                booking.activated_date = timezone.localdate()
+                booking.save(update_fields=["status", "activated_date"])
+            return existing
+    number = (Token.objects.filter(doctor=doctor, date=date).aggregate(value=Max("token_number"))["value"] or 0) + 1
+    token = Token.objects.create(
+        doctor=doctor, patient=patient, date=date, token_number=number,
+        token_type=token_type, source_booking=booking,
+        status=Token.Status.ACTIVE, activated_at=timezone.now(),
     )
-
-
-# ---------------------------------------------------------
-# COMPLETE CONSULTATION AND GENERATE CONSULTATION BILL
-# ---------------------------------------------------------
-
-@api_view(["POST"])
-def consultation_complete(request, consultation_id):
-    with transaction.atomic():
-        consultation = get_object_or_404(
-            Consultation.objects.select_for_update().select_related(
-                "token", "doctor", "patient"
-            ),
-            pk=consultation_id,
-        )
-
-        if consultation.status == Consultation.Status.COMPLETED:
-            existing_bill = ConsultationBill.objects.filter(
-                token=consultation.token
-            ).first()
-
-            return Response(
-                {
-                    "message": "Consultation is already completed.",
-                    "consultation": ConsultationSerializer(
-                        consultation
-                    ).data,
-                    "bill": (
-                        ConsultationBillSerializer(existing_bill).data
-                        if existing_bill else None
-                    ),
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        consultation.diagnosis = request.data.get(
-            "diagnosis",
-            consultation.diagnosis,
-        )
-        consultation.clinical_notes = request.data.get(
-            "clinical_notes",
-            consultation.clinical_notes,
-        )
-        consultation.status = Consultation.Status.COMPLETED
-        consultation.completed_at = timezone.now()
-        consultation.save(
-            update_fields=[
-                "diagnosis",
-                "clinical_notes",
-                "status",
-                "completed_at",
-            ]
-        )
-
-        token = consultation.token
-        token.status = Token.Status.COMPLETED
-        token.completed_at = timezone.now()
-        token.save(update_fields=["status", "completed_at"])
-
-        if token.source_booking_id:
-            booking = token.source_booking
-            booking.status = Booking.Status.COMPLETED
-            booking.save(update_fields=["status"])
-
-        fee = consultation.doctor.consultation_fee or Decimal("0.00")
-
-        bill, created = ConsultationBill.objects.get_or_create(
-            token=token,
-            defaults={
-                "patient": consultation.patient,
-                "doctor": consultation.doctor,
-                "consultation_fee": fee,
-                "total": fee,
-                "payment_status": (
-                    ConsultationBill.PaymentStatus.PENDING
-                ),
-            },
-        )
-
-    return Response(
-        {
-            "message": "Consultation completed and bill generated.",
-            "consultation": ConsultationSerializer(consultation).data,
-            "bill": ConsultationBillSerializer(bill).data,
-        },
-        status=(
-            status.HTTP_201_CREATED
-            if created
-            else status.HTTP_200_OK
-        ),
-    )
-
-
-# ---------------------------------------------------------
-# PAY CONSULTATION BILL
-# ---------------------------------------------------------
-
-@api_view(["POST"])
-def consultation_bill_pay(request, bill_id):
-    with transaction.atomic():
-        bill = get_object_or_404(
-            ConsultationBill.objects.select_for_update(),
-            pk=bill_id,
-        )
-
-        if bill.payment_status == ConsultationBill.PaymentStatus.PAID:
-            return Response(
-                {
-                    "message": "Consultation bill is already paid.",
-                    "bill": ConsultationBillSerializer(bill).data,
-                },
-                status=status.HTTP_200_OK,
-            )
-
-        if bill.token.status != Token.Status.COMPLETED:
-            return Response(
-                {
-                    "error": (
-                        "The consultation must be completed before "
-                        "the bill can be paid."
-                    )
-                },
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        bill.payment_status = ConsultationBill.PaymentStatus.PAID
-        bill.paid_at = timezone.now()
-        bill.save(update_fields=["payment_status", "paid_at"])
-
-    return Response(
-        {
-            "message": "Consultation bill paid successfully.",
-            "bill": ConsultationBillSerializer(bill).data,
-        },
-        status=status.HTTP_200_OK,
-    )
+    if booking:
+        booking.reserved_token_number = number
+        booking.status = Booking.Status.ACTIVATED
+        booking.activated_date = timezone.localdate()
+        booking.save(update_fields=["reserved_token_number", "status", "activated_date"])
+    return token
