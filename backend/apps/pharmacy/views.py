@@ -236,8 +236,6 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
                     raise ValidationError(f"Item {row['item_id']} is not in this prescription.")
                 medicine, quantity = item.medicine, row["quantity"]
                 medicine_map[medicine.id] = medicine
-                if quantity > unbilled[item.id]:
-                    raise ValidationError(f"{item.medicine_name}: only {unbilled[item.id]} left to bill.")
                 if not medicine.is_active:
                     raise ValidationError(f"{medicine.name} is inactive.")
                 if medicine.expiry_date < today:
@@ -351,7 +349,7 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
 
             # 5. Status: Dispensed when every item has remaining_quantity == 0, else Partially Dispensed.
             # When it becomes Dispensed, set dispensed_at = timezone.now().
-            everything_done = all(i.remaining_quantity == 0 for i in items.values())
+            everything_done = all(i.remaining_quantity <= 0 for i in items.values())
             if everything_done:
                 prescription.status = Prescription.Status.DISPENSED
                 prescription.dispensed_at = timezone.now()
