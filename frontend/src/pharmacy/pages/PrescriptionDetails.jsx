@@ -235,8 +235,9 @@ function PrescriptionDetails() {
   const canDecline =
     prescription.status === "Pending" && (prescription.bill_count ?? bills.length) === 0;
 
-  const hasUnbilled = prescription.items?.some(
-    (i) => i.prescribed_quantity - i.billed_quantity > 0
+  // Pharmacy can bill any active in-stock items, including more than prescribed
+  const canBill = prescription.items?.some(
+    (i) => i.stock_quantity > 0 && i.medicine_is_active && i.stock_state !== "Expired"
   );
   const hasDispensable = prescription.items?.some(
     (i) => i.dispensable_quantity > 0 && i.stock_quantity > 0
@@ -351,7 +352,7 @@ function PrescriptionDetails() {
                   if (isInactive) warnings.push("Medicine is inactive.");
                   if (isExpired) warnings.push("Medicine is expired.");
                   if (isOutOfStock) warnings.push("Medicine is out of stock.");
-                  if (!isOutOfStock && item.stock_quantity < unbilled) {
+                  if (!isOutOfStock && unbilled > 0 && item.stock_quantity < unbilled) {
                     warnings.push("Stock is less than remaining unbilled quantity.");
                   }
                   if (item.billed_quantity > item.paid_quantity) {
@@ -376,7 +377,7 @@ function PrescriptionDetails() {
                       <td className="text-center">{item.prescribed_quantity}</td>
                       <td className="text-center">{item.dispensed_quantity}</td>
                       <td className="text-center fw-semibold">
-                        {item.remaining_quantity}
+                        {Math.max(0, item.remaining_quantity)}
                       </td>
                       <td className="text-center">{item.billed_quantity}</td>
                       <td className="text-center">{item.paid_quantity}</td>
@@ -398,10 +399,16 @@ function PrescriptionDetails() {
                               type="number"
                               className="form-control form-control-sm"
                               min="0"
-                              max={Math.max(0, unbilled)}
+                              max={item.stock_quantity}
                               step="1"
-                              placeholder={unbilled > 0 ? `Max ${unbilled}` : "0"}
-                              disabled={unbilled <= 0 || isExpired || isInactive}
+                              placeholder={
+                                item.stock_quantity > 0
+                                  ? `Stock: ${item.stock_quantity}`
+                                  : "0"
+                              }
+                              disabled={
+                                item.stock_quantity <= 0 || isExpired || isInactive
+                              }
                               value={billQuantities[item.id] ?? ""}
                               onChange={(e) =>
                                 handleBillQtyChange(item.id, e.target.value)
@@ -442,7 +449,7 @@ function PrescriptionDetails() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  disabled={!hasUnbilled}
+                  disabled={!canBill}
                   onClick={() => {
                     setModalError("");
                     setActiveModal("bill");
@@ -604,7 +611,7 @@ function PrescriptionDetails() {
           ) : (
             <div>
               <p>
-                No specific quantities entered. This will bill all remaining unbilled quantities
+                No specific quantities entered. This will bill remaining unbilled quantities
                 for active in-stock items on this prescription.
               </p>
               <div className="small text-secondary">Totals are calculated by the server.</div>
