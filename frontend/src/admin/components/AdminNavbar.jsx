@@ -19,6 +19,7 @@ function AdminNavbar() {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");
     localStorage.removeItem("role");
+    localStorage.removeItem("displayName");
     navigate("/login", { replace: true });
   };
 
@@ -27,9 +28,14 @@ function AdminNavbar() {
       className="navbar navbar-expand-xl navbar-dark"
     >
       <div className="container-xl">
-        <NavLink className="navbar-brand fw-bold" to="/admin/dashboard">
-          ✚ CareFlow
-        </NavLink>
+        <div className="d-flex align-items-center text-nowrap">
+          <NavLink className="navbar-brand fw-bold mb-0" to="/admin/dashboard">
+            ✚ CareFlow
+          </NavLink>
+          <span className="navbar-text text-white-50">
+            {localStorage.getItem("displayName") || "Administrator"}
+          </span>
+        </div>
 
         <button
           className="navbar-toggler"
@@ -44,7 +50,6 @@ function AdminNavbar() {
         </button>
 
         <div className="collapse navbar-collapse" id="adminNavbar">
-          <span className="navbar-text text-white-50 me-xl-auto" aria-hidden="true" />
           <div className="navbar-nav ms-xl-auto">
             {menus.map((menu) => (
               <NavLink

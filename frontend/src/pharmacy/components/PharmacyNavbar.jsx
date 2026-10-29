@@ -14,15 +14,21 @@ function PharmacyNavbar() {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");
     localStorage.removeItem("role");
+    localStorage.removeItem("displayName");
     navigate("/login", { replace: true });
   };
 
   return (
     <nav className="navbar navbar-expand-xl navbar-dark pharmacy-no-print d-print-none">
       <div className="container-xl">
-        <NavLink className="navbar-brand fw-bold" to="/pharmacy/dashboard">
-          ✚ CareFlow
-        </NavLink>
+        <div className="d-flex align-items-center text-nowrap">
+          <NavLink className="navbar-brand fw-bold mb-0" to="/pharmacy/dashboard">
+            ✚ CareFlow
+          </NavLink>
+          <span className="navbar-text text-white-50">
+            {localStorage.getItem("displayName") || "Pharmacist"}
+          </span>
+        </div>
 
         <button
           className="navbar-toggler"
@@ -37,7 +43,6 @@ function PharmacyNavbar() {
         </button>
 
         <div className="collapse navbar-collapse" id="pharmacyNavbar">
-          <span className="navbar-text text-white-50 me-xl-auto" aria-hidden="true" />
           <div className="navbar-nav ms-xl-auto">
             {menus.map((menu) => (
               <NavLink

@@ -36,6 +36,7 @@ api.interceptors.response.use(
         localStorage.removeItem("access");
         localStorage.removeItem("refresh");
         localStorage.removeItem("role");
+        localStorage.removeItem("displayName");
         window.location.assign("/login");
         return Promise.reject(refreshError);
       }
