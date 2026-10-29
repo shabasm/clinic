@@ -44,7 +44,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to={roleRoutes[localStorage.getItem("role")] || "/login"} replace />} />
+        <Route path="/" element={<Navigate to= "/login" replace />} />
         <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/staff" element={<AdminRoute><Staff /></AdminRoute>} />
         <Route path="/admin/credentials" element={<AdminRoute><Credentials /></AdminRoute>} />
