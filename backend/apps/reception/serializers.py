@@ -1,20 +1,26 @@
 from django.utils import timezone
 from django.db import transaction
 from rest_framework import serializers
+import re
 
 from apps.admin_module.models import Booking, Consultation, DoctorProfile, Patient, RegistrationBill, Settings, Staff, Token
 
 
 class PatientSerializer(serializers.ModelSerializer):
+    payment_method = serializers.ChoiceField(choices=RegistrationBill.PaymentMethod.choices, write_only=True, required=False)
     registration_fee = serializers.SerializerMethodField()
     registration_payment_status = serializers.SerializerMethodField()
+    registration_bill_id = serializers.SerializerMethodField()
+    registration_bill_created_at = serializers.SerializerMethodField()
+    registration_payment_method = serializers.SerializerMethodField()
+    registration_paid_at = serializers.SerializerMethodField()
     appointment_history = serializers.SerializerMethodField()
     consultation_history = serializers.SerializerMethodField()
     class Meta:
         model = Patient
         fields = [
-            "id", "full_name", "date_of_birth", "gender", "phone", "email",
-            "address", "registration_fee", "registration_payment_status", "appointment_history", "consultation_history", "blood_group", "emergency_contact_name",
+            "id", "full_name", "date_of_birth", "gender", "phone", "email", "payment_method",
+            "address", "registration_fee", "registration_payment_status", "registration_bill_id", "registration_bill_created_at", "registration_payment_method", "registration_paid_at", "appointment_history", "consultation_history", "blood_group", "emergency_contact_name",
             "emergency_contact_phone", "registration_date", "is_active",
         ]
         read_only_fields = ["id", "registration_date", "is_active"]
@@ -27,11 +33,34 @@ class PatientSerializer(serializers.ModelSerializer):
         bill = getattr(patient, "registrationbill", None)
         return bill.payment_status if bill else None
 
+    def get_registration_bill_id(self, patient):
+        bill = getattr(patient, "registrationbill", None)
+        return bill.id if bill else None
+
+    def get_registration_bill_created_at(self, patient):
+        bill = getattr(patient, "registrationbill", None)
+        return bill.created_at if bill else None
+
+    def get_registration_payment_method(self, patient):
+        bill = getattr(patient, "registrationbill", None)
+        return bill.payment_method if bill else None
+
+    def get_registration_paid_at(self, patient):
+        bill = getattr(patient, "registrationbill", None)
+        return bill.paid_at if bill else None
+
     @transaction.atomic
     def create(self, validated_data):
+        payment_method = validated_data.pop("payment_method", None)
         patient = super().create(validated_data)
         fee = Settings.load().registration_fee
-        RegistrationBill.objects.create(patient=patient, registration_fee=fee, total=fee)
+        bill = RegistrationBill.objects.create(patient=patient, registration_fee=fee, total=fee)
+        if payment_method:
+            bill.payment_status = RegistrationBill.PaymentStatus.PAID
+            bill.payment_method = payment_method
+            bill.paid_by = self.context["request"].user
+            bill.paid_at = timezone.now()
+            bill.save(update_fields=["payment_status", "payment_method", "paid_by", "paid_at"])
         return patient
 
     def get_appointment_history(self, patient):
@@ -46,6 +75,8 @@ class PatientSerializer(serializers.ModelSerializer):
         value = value.strip()
         if len(value) < 3:
             raise serializers.ValidationError("Enter at least 3 characters.")
+        if not re.fullmatch(r"[^\W\d_]+(?:[ '.-][^\W\d_]+)*", value, flags=re.UNICODE):
+            raise serializers.ValidationError("Use letters, spaces, apostrophes, periods, or hyphens only.")
         return value
 
     def validate_date_of_birth(self, value):
@@ -54,7 +85,8 @@ class PatientSerializer(serializers.ModelSerializer):
         return value
 
     def validate_phone(self, value):
-        if not value.isdigit() or not 10 <= len(value) <= 15:
+        value = value.strip()
+        if not re.fullmatch(r"[0-9]{10,15}", value):
             raise serializers.ValidationError("Enter a valid phone number (10–15 digits).")
         matches = Patient.objects.filter(phone=value)
         if self.instance:
@@ -62,6 +94,27 @@ class PatientSerializer(serializers.ModelSerializer):
         if matches.exists():
             raise serializers.ValidationError("A patient with this phone number already exists. Search and select that record.")
         return value
+
+    def validate_emergency_contact_phone(self, value):
+        value = value.strip()
+        if value and not re.fullmatch(r"[0-9]{10,15}", value):
+            raise serializers.ValidationError("Enter 10–15 digits, or leave this field blank.")
+        return value
+
+    def validate_address(self, value):
+        value = value.strip()
+        if len(value) < 3:
+            raise serializers.ValidationError("Enter an address with at least 3 characters.")
+        return value
+
+    def validate(self, attrs):
+        emergency_name = attrs.get("emergency_contact_name", getattr(self.instance, "emergency_contact_name", "")).strip()
+        emergency_phone = attrs.get("emergency_contact_phone", getattr(self.instance, "emergency_contact_phone", "")).strip()
+        if bool(emergency_name) != bool(emergency_phone):
+            raise serializers.ValidationError({"emergency_contact_name": "Enter both emergency contact name and phone, or leave both blank."})
+        attrs["emergency_contact_name"] = emergency_name
+        attrs["emergency_contact_phone"] = emergency_phone
+        return attrs
 
 
 class ReceptionDoctorSerializer(serializers.ModelSerializer):

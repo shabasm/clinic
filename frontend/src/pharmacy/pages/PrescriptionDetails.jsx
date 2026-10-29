@@ -188,7 +188,7 @@ function PrescriptionDetails() {
         </head>
         <body>
           ${slipHtml}
-          <script>window.onload = function(){ window.print(); }<\/script>
+          <script>window.onload = function(){ window.print(); }</script>
         </body>
       </html>
     `);
