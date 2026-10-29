@@ -27,9 +27,8 @@ function PrescriptionDetails() {
   const [success, setSuccess] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Per-item input states keyed by item.id
+  // Per-item input states for bill creation keyed by item.id
   const [billQuantities, setBillQuantities] = useState({});
-  const [dispenseQuantities, setDispenseQuantities] = useState({});
 
   // Confirmation modal state: "bill" | "dispense" | "decline" | null
   const [activeModal, setActiveModal] = useState(null);
@@ -70,28 +69,12 @@ function PrescriptionDetails() {
     setBillQuantities((prev) => ({ ...prev, [itemId]: val }));
   };
 
-  const handleDispenseQtyChange = (itemId, val) => {
-    setDispenseQuantities((prev) => ({ ...prev, [itemId]: val }));
-  };
-
-  // Helper to collect non-zero row quantities
+  // Helper to collect non-zero row quantities for billing
   const getSelectedBillItems = () => {
     if (!prescription?.items) return null;
     const items = [];
     for (const item of prescription.items) {
       const qty = Number(billQuantities[item.id]);
-      if (qty > 0) {
-        items.push({ item_id: item.id, quantity: qty, name: item.medicine_name });
-      }
-    }
-    return items.length > 0 ? items : null;
-  };
-
-  const getSelectedDispenseItems = () => {
-    if (!prescription?.items) return null;
-    const items = [];
-    for (const item of prescription.items) {
-      const qty = Number(dispenseQuantities[item.id]);
       if (qty > 0) {
         items.push({ item_id: item.id, quantity: qty, name: item.medicine_name });
       }
@@ -127,14 +110,9 @@ function PrescriptionDetails() {
     setError("");
     setSuccess("");
     try {
-      const selected = getSelectedDispenseItems();
-      const payloadItems = selected
-        ? selected.map(({ item_id, quantity }) => ({ item_id, quantity }))
-        : undefined;
-      await dispensePrescription(id, payloadItems);
-      setSuccess("Medicines dispensed and stock deducted successfully.");
+      await dispensePrescription(id);
+      setSuccess("Ready medicines dispensed and stock deducted successfully.");
       setActiveModal(null);
-      setDispenseQuantities({});
       reloadData();
     } catch (err) {
       setModalError(errorMessage(err));
@@ -160,13 +138,24 @@ function PrescriptionDetails() {
     }
   };
 
-  // Print Instruction Slip — opens a new window with just the slip content
+  // Print Instruction Slip — uses a hidden iframe so about:blank never opens or stays open
   const handlePrintInstructions = () => {
     if (!prescription) return;
     const slipHtml = slipRef.current?.innerHTML || "";
-    const win = window.open("", "_blank", "width=700,height=600");
-    if (!win) return;
-    win.document.write(`
+    
+    // Create an invisible iframe
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.right = "0";
+    iframe.style.bottom = "0";
+    iframe.style.width = "0";
+    iframe.style.height = "0";
+    iframe.style.border = "0";
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -188,11 +177,23 @@ function PrescriptionDetails() {
         </head>
         <body>
           ${slipHtml}
-          <script>window.onload = function(){ window.print(); }<\/script>
         </body>
       </html>
     `);
-    win.document.close();
+    doc.close();
+
+    iframe.contentWindow.focus();
+    setTimeout(() => {
+      try {
+        iframe.contentWindow.print();
+      } finally {
+        setTimeout(() => {
+          if (iframe.parentNode) {
+            iframe.parentNode.removeChild(iframe);
+          }
+        }, 1000);
+      }
+    }, 250);
   };
 
   if (loading) {
@@ -232,13 +233,19 @@ function PrescriptionDetails() {
 
   const isTerminal =
     prescription.status === "Dispensed" || prescription.status === "Declined";
-  const canDecline =
-    prescription.status === "Pending" && (prescription.bill_count ?? bills.length) === 0;
+  const isPartial = prescription.status === "Partially Dispensed";
+  const isPending = prescription.status === "Pending";
+  const hasUnpaidBills = bills.some((b) => b.payment_status === "Pending");
 
-  // Pharmacy can bill any active in-stock items, including more than prescribed
+  // Can decline if Pending or Partially Dispensed and no unpaid bills exist
+  const canDecline = (isPending || isPartial) && !hasUnpaidBills;
+
+  // Pharmacy can bill any active in-stock items
   const canBill = prescription.items?.some(
     (i) => i.stock_quantity > 0 && i.medicine_is_active && i.stock_state !== "Expired"
   );
+
+  // Ready to dispense if any item has been paid for and is in stock
   const hasDispensable = prescription.items?.some(
     (i) => i.dispensable_quantity > 0 && i.stock_quantity > 0
   );
@@ -329,20 +336,13 @@ function PrescriptionDetails() {
                   <th className="text-center">In stock</th>
                   <th>Stock state</th>
                   {!isTerminal && (
-                    <>
-                      <th style={{ width: "110px" }}>Bill qty</th>
-                      <th style={{ width: "110px" }}>Dispense qty</th>
-                    </>
+                    <th style={{ width: "120px" }}>Bill qty</th>
                   )}
                 </tr>
               </thead>
               <tbody>
                 {prescription.items?.map((item) => {
                   const unbilled = item.prescribed_quantity - item.billed_quantity;
-                  const maxDispensable = Math.min(
-                    item.dispensable_quantity,
-                    item.stock_quantity
-                  );
                   const isExpired = item.stock_state === "Expired";
                   const isOutOfStock =
                     item.stock_state === "Out of stock" || item.stock_quantity === 0;
@@ -393,48 +393,27 @@ function PrescriptionDetails() {
                         </span>
                       </td>
                       {!isTerminal && (
-                        <>
-                          <td>
-                            <input
-                              type="number"
-                              className="form-control form-control-sm"
-                              min="0"
-                              max={item.stock_quantity}
-                              step="1"
-                              placeholder={
-                                item.stock_quantity > 0
-                                  ? `Stock: ${item.stock_quantity}`
-                                  : "0"
-                              }
-                              disabled={
-                                item.stock_quantity <= 0 || isExpired || isInactive
-                              }
-                              value={billQuantities[item.id] ?? ""}
-                              onChange={(e) =>
-                                handleBillQtyChange(item.id, e.target.value)
-                              }
-                            />
-                          </td>
-                          <td>
-                            <input
-                              type="number"
-                              className="form-control form-control-sm"
-                              min="0"
-                              max={Math.max(0, maxDispensable)}
-                              step="1"
-                              placeholder={
-                                maxDispensable > 0 ? `Max ${maxDispensable}` : "0"
-                              }
-                              disabled={
-                                maxDispensable <= 0 || isExpired || isInactive
-                              }
-                              value={dispenseQuantities[item.id] ?? ""}
-                              onChange={(e) =>
-                                handleDispenseQtyChange(item.id, e.target.value)
-                              }
-                            />
-                          </td>
-                        </>
+                        <td>
+                          <input
+                            type="number"
+                            className="form-control form-control-sm"
+                            min="0"
+                            max={item.stock_quantity}
+                            step="1"
+                            placeholder={
+                              item.stock_quantity > 0
+                                ? `Stock: ${item.stock_quantity}`
+                                : "0"
+                            }
+                            disabled={
+                              item.stock_quantity <= 0 || isExpired || isInactive
+                            }
+                            value={billQuantities[item.id] ?? ""}
+                            onChange={(e) =>
+                              handleBillQtyChange(item.id, e.target.value)
+                            }
+                          />
+                        </td>
                       )}
                     </tr>
                   );
@@ -457,17 +436,18 @@ function PrescriptionDetails() {
                 >
                   Create bill
                 </button>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={!hasDispensable}
-                  onClick={() => {
-                    setModalError("");
-                    setActiveModal("dispense");
-                  }}
-                >
-                  Dispense selected
-                </button>
+                {hasDispensable && (
+                  <button
+                    type="button"
+                    className="btn btn-success"
+                    onClick={() => {
+                      setModalError("");
+                      setActiveModal("dispense");
+                    }}
+                  >
+                    Dispense ready medicines
+                  </button>
+                )}
               </div>
               {canDecline && (
                 <button
@@ -478,7 +458,7 @@ function PrescriptionDetails() {
                     setActiveModal("decline");
                   }}
                 >
-                  Decline prescription
+                  {isPartial ? "Cancel remaining prescription" : "Decline prescription"}
                 </button>
               )}
             </div>
@@ -538,7 +518,7 @@ function PrescriptionDetails() {
         </section>
       </main>
 
-      {/* Hidden printable instruction slip — rendered into a ref, printed via new window */}
+      {/* Hidden printable instruction slip — rendered into a ref, printed via hidden iframe */}
       <div style={{ display: "none" }}>
         <div ref={slipRef}>
           <h2>✚ CareFlow Clinic</h2>
@@ -622,53 +602,50 @@ function PrescriptionDetails() {
 
       {activeModal === "dispense" && (
         <ConfirmModal
-          title="Dispense medicines"
+          title="Dispense ready medicines"
           confirmText="Dispense"
-          confirmVariant="primary"
+          confirmVariant="success"
           onConfirm={handleConfirmDispense}
           onClose={() => setActiveModal(null)}
           loading={actionLoading}
           error={modalError}
         >
-          {getSelectedDispenseItems() ? (
-            <div>
-              <p>Dispense the specified paid items:</p>
-              <ul>
-                {getSelectedDispenseItems().map((it) => (
-                  <li key={it.item_id}>
-                    {it.name}: <strong>{it.quantity}</strong> units
-                  </li>
-                ))}
-              </ul>
-              <div className="small text-secondary">
-                Medicine inventory will be decremented accordingly.
-              </div>
-            </div>
-          ) : (
-            <div>
-              <p>
-                Dispense all items that have been paid for and are ready? Medicine inventory will
-                be deducted.
-              </p>
-            </div>
-          )}
+          <p className="mb-2">
+            Dispense all ready medicines that have been paid for?
+          </p>
+          <div className="small text-secondary">
+            Medicine inventory will be decremented accordingly.
+          </div>
         </ConfirmModal>
       )}
 
       {activeModal === "decline" && (
         <ConfirmModal
-          title="Decline prescription"
-          confirmText="Decline prescription"
+          title={isPartial ? "Cancel remaining prescription" : "Decline prescription"}
+          confirmText={isPartial ? "Cancel prescription" : "Decline prescription"}
           confirmVariant="danger"
           onConfirm={handleConfirmDecline}
           onClose={() => setActiveModal(null)}
           loading={actionLoading}
           error={modalError}
         >
-          <p className="mb-0">
-            Decline prescription {formatId("RX", prescription.id)}? Once declined, this
-            prescription cannot be billed or dispensed.
-          </p>
+          {isPartial ? (
+            <div>
+              <p className="fw-semibold text-danger">
+                Are you sure you want to cancel the remaining items for prescription {formatId("RX", prescription.id)}?
+              </p>
+              <ul className="small text-secondary mb-3">
+                <li>Previously dispensed medicines and inventory stock will remain unchanged.</li>
+                <li>Existing paid bills and payment receipts are preserved.</li>
+                <li>The prescription status will become <strong>Declined</strong> and no further billing or dispensing will be permitted.</li>
+              </ul>
+            </div>
+          ) : (
+            <p className="mb-0">
+              Decline prescription {formatId("RX", prescription.id)}? Once declined, this
+              prescription cannot be billed or dispensed.
+            </p>
+          )}
         </ConfirmModal>
       )}
     </>
