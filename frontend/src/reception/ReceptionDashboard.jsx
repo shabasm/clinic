@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import api, { collection, errorMessage, formatDate, formatId } from "../admin/services/api";
+import AdminModal from "../admin/components/AdminModal";
 import RoleNavbar from "../shared/RoleNavbar";
+import "./ReceptionDashboard.css";
 
 const money = (amount) => `₹${Number(amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -9,7 +11,14 @@ const today = () => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 };
 
+const yesterday = () => {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+};
+
 function ReceptionDashboard() {
+  const [activeSection, setActiveSection] = useState("Overview");
   const [dashboard, setDashboard] = useState(null);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
@@ -17,6 +26,7 @@ function ReceptionDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [registrationBill, setRegistrationBill] = useState(null);
   const [saving, setSaving] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
   const [editingPatient, setEditingPatient] = useState(null);
@@ -26,6 +36,7 @@ function ReceptionDashboard() {
   const [rescheduling, setRescheduling] = useState(null);
   const [patientForm, setPatientForm] = useState({
     full_name: "", date_of_birth: "", gender: "", phone: "", email: "", address: "",
+    blood_group: "", emergency_contact_name: "", emergency_contact_phone: "",
   });
   const [bookingForm, setBookingForm] = useState({ patient: "", doctor: "", date: today() });
   const [walkInForm, setWalkInForm] = useState({ patient: "", doctor: "" });
@@ -134,6 +145,21 @@ function ReceptionDashboard() {
     }
   };
 
+  const deactivatePatient = async (patient) => {
+    if (!window.confirm(`Deactivate ${patient.full_name}? Their medical history will be preserved.`)) return;
+    setSaving(true);
+    setError("");
+    try {
+      await api.delete(`reception/patients/${patient.id}/`);
+      setNotice(`${patient.full_name} was deactivated. Their records remain available in the database.`);
+      await load();
+    } catch (requestError) {
+      setError(errorMessage(requestError));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveReschedule = async (booking) => {
     setSaving(true);
     setError("");
@@ -157,7 +183,15 @@ function ReceptionDashboard() {
   return (
     <>
       <RoleNavbar title="Reception workspace" />
-      <main className="container admin-main">
+      <main className="container-fluid admin-main reception-layout">
+        <aside className="reception-sidebar" aria-label="Reception sections">
+          <div className="reception-sidebar-title">Reception menu</div>
+          {[
+            ["Overview", "▦"], ["Register & schedule", "+"], ["Patients", "♙"],
+            ["Doctors", "✚"], ["Today’s queue", "☷"], ["Payments", "₹"], ["Appointments", "◷"],
+          ].map(([label, icon]) => <button key={label} type="button" className={`reception-nav-item${activeSection === label ? " active" : ""}`} onClick={() => setActiveSection(label)} aria-current={activeSection === label ? "page" : undefined}><span aria-hidden="true">{icon}</span>{label}</button>)}
+        </aside>
+        <div className="reception-content">
         <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3">
           <div>
             <h1 className="mb-1">Reception desk</h1>
@@ -168,8 +202,25 @@ function ReceptionDashboard() {
 
         {error && <div className="alert alert-danger" role="alert">{error}</div>}
         {notice && <div className="alert alert-success" role="status">{notice}</div>}
+        {registrationBill && <AdminModal title="Registration bill" size="modal-lg" onClose={() => setRegistrationBill(null)}>
+          <div className="modal-body p-4">
+            <div className="border rounded-3 p-4">
+              <div className="d-flex flex-wrap justify-content-between gap-3 border-bottom pb-3 mb-3">
+                <div><div className="text-primary fw-bold fs-4">CareFlow Clinic</div><div className="small text-secondary">Patient registration invoice</div></div>
+                <div className="text-sm-end"><div className="fw-semibold">REGISTRATION BILL</div><div className="text-secondary">{formatId("RB", registrationBill.registration_bill_id)}</div><div className="small text-secondary">Date: {formatDate(registrationBill.registration_bill_created_at)}</div></div>
+              </div>
+              <div className="row g-3 mb-4">
+                <div className="col-sm-7"><div className="small text-secondary">BILLED TO</div><div className="fw-semibold">{registrationBill.full_name}</div><div className="small">Patient {formatId("PT", registrationBill.id)}</div><div className="small">{registrationBill.phone}</div>{registrationBill.email && <div className="small">{registrationBill.email}</div>}</div>
+                <div className="col-sm-5 text-sm-end"><div className="small text-secondary">PAYMENT STATUS</div><span className={`badge text-bg-${registrationBill.registration_payment_status === "Paid" ? "success" : "warning"}`}>{registrationBill.registration_payment_status || "Pending"}</span>{registrationBill.registration_payment_method && <div className="small mt-2">Paid by {registrationBill.registration_payment_method}</div>}{registrationBill.registration_paid_at && <div className="small text-secondary">{formatDate(registrationBill.registration_paid_at)}</div>}</div>
+              </div>
+              <div className="table-responsive"><table className="table align-middle mb-0"><thead><tr><th>Description</th><th className="text-end">Amount</th></tr></thead><tbody><tr><td>One-time patient registration</td><td className="text-end">{money(registrationBill.registration_fee ?? dashboard?.registration_fee)}</td></tr></tbody><tfoot><tr><th className="text-end">Total</th><th className="text-end fs-5">{money(registrationBill.registration_fee ?? dashboard?.registration_fee)}</th></tr></tfoot></table></div>
+              <div className="border-top mt-3 pt-3 text-center small text-secondary">Thank you. Please keep this bill for your records.</div>
+            </div>
+          </div>
+          <div className="modal-footer"><button className="btn btn-primary" type="button" onClick={() => setRegistrationBill(null)}>Done</button></div>
+        </AdminModal>}
 
-        <div className="row g-3 mb-4">
+        {activeSection === "Overview" && <div className="row g-3 mb-4">
           {[["Registered patients", dashboard?.patients], ["Appointments today", dashboard?.appointments_today], ["Waiting tokens", dashboard?.waiting_tokens], ["Completed consultations", dashboard?.completed_consultations], ["Pending registration fees", dashboard?.pending_registration_payments], ["Pending consultation bills", dashboard?.pending_consultation_payments]].map(([label, value]) => (
             <div className="col-6 col-lg-4 col-xxl-2" key={label}>
               <div className="card stat-card h-100"><div className="card-body">
@@ -178,26 +229,33 @@ function ReceptionDashboard() {
               </div></div>
             </div>
           ))}
-        </div>
+        </div>}
 
-        <div className="row g-4 mb-4">
+        {activeSection === "Register & schedule" && <div className="row g-4 mb-4">
           <div className="col-12 col-xl-6">
             <section className="card h-100"><div className="card-body">
               <h2 className="h5 mb-3">Register a patient</h2>
               <form className="row g-3" onSubmit={(event) => submit(
-                event, editingPatient ? `reception/patients/${editingPatient.id}/` : "reception/patients/", patientForm,
-                (patient) => `${patient.full_name} ${editingPatient ? "was updated" : `was registered (${formatId("PT", patient.id)})`}.`,
-                () => { setPatientForm({ full_name: "", date_of_birth: "", gender: "", phone: "", email: "", address: "" }); setEditingPatient(null); },
+                event, editingPatient ? `reception/patients/${editingPatient.id}/` : "reception/patients/", editingPatient ? patientForm : { ...patientForm, payment_method: paymentMethod },
+                (patient) => {
+                  if (editingPatient) return `${patient.full_name} was updated.`;
+                  setRegistrationBill(patient);
+                  return "";
+                },
+                () => { setPatientForm({ full_name: "", date_of_birth: "", gender: "", phone: "", email: "", address: "", blood_group: "", emergency_contact_name: "", emergency_contact_phone: "" }); setEditingPatient(null); },
                 editingPatient ? "put" : "post",
               )}>
-                <div className="col-12 col-md-6"><label className="form-label required">Full name</label><input className="form-control" required minLength="3" maxLength="100" value={patientForm.full_name} onChange={choose(setPatientForm, "full_name")} /></div>
-                <div className="col-6 col-md-3"><label className="form-label required">Date of birth</label><input type="date" className="form-control" required max={today()} value={patientForm.date_of_birth} onChange={choose(setPatientForm, "date_of_birth")} /></div>
+                <div className="col-12 col-md-6"><label className="form-label required">Full name</label><input className="form-control" required minLength="3" maxLength="100" autoComplete="name" value={patientForm.full_name} onChange={choose(setPatientForm, "full_name")} /></div>
+                <div className="col-6 col-md-3"><label className="form-label required">Date of birth</label><input type="date" className="form-control" required max={yesterday()} value={patientForm.date_of_birth} onChange={choose(setPatientForm, "date_of_birth")} /></div>
                 <div className="col-6 col-md-3"><label className="form-label required">Gender</label><select className="form-select" required value={patientForm.gender} onChange={choose(setPatientForm, "gender")}><option value="">Select</option><option>Female</option><option>Male</option><option>Other</option></select></div>
-                <div className="col-12 col-md-6"><label className="form-label required">Phone</label><input type="tel" className="form-control" required minLength="10" maxLength="15" pattern="[0-9]+" value={patientForm.phone} onChange={choose(setPatientForm, "phone")} /></div>
-                <div className="col-12 col-md-6"><label className="form-label">Email</label><input type="email" className="form-control" value={patientForm.email} onChange={choose(setPatientForm, "email")} /></div>
+                <div className="col-12 col-md-6"><label className="form-label required">Phone</label><input type="tel" className="form-control" required minLength="10" maxLength="15" pattern="[0-9]{10,15}" title="Enter 10 to 15 digits." autoComplete="tel" value={patientForm.phone} onChange={choose(setPatientForm, "phone")} /></div>
+                <div className="col-12 col-md-6"><label className="form-label">Email</label><input type="email" className="form-control" maxLength="254" autoComplete="email" value={patientForm.email} onChange={choose(setPatientForm, "email")} /></div>
                 <div className="col-12"><label className="form-label required">Address</label><textarea className="form-control" required minLength="3" rows="2" value={patientForm.address} onChange={choose(setPatientForm, "address")} /></div>
+                <div className="col-12 col-md-4"><label className="form-label">Blood group</label><select className="form-select" value={patientForm.blood_group} onChange={choose(setPatientForm, "blood_group")}><option value="">Select blood group</option><option value="A+">A+</option><option value="A-">A-</option><option value="B+">B+</option><option value="B-">B-</option><option value="AB+">AB+</option><option value="AB-">AB-</option><option value="O+">O+</option><option value="O-">O-</option><option value="Unknown">Unknown</option></select></div>
+                <div className="col-12 col-md-4"><label className="form-label">Emergency contact name</label><input className="form-control" maxLength="100" required={Boolean(patientForm.emergency_contact_phone)} value={patientForm.emergency_contact_name} onChange={choose(setPatientForm, "emergency_contact_name")} /></div>
+                <div className="col-12 col-md-4"><label className="form-label">Emergency contact phone</label><input type="tel" className="form-control" minLength="10" maxLength="15" pattern="[0-9]{10,15}" title="Enter 10 to 15 digits, or leave blank." required={Boolean(patientForm.emergency_contact_name)} value={patientForm.emergency_contact_phone} onChange={choose(setPatientForm, "emergency_contact_phone")} /></div>
                 <div className="col-12"><div className="alert alert-light border mb-0 py-2"><span className="fw-semibold">Registration fee:</span> {money(dashboard?.registration_fee)} <span className="text-secondary">(one time per patient)</span></div></div>
-                <div className="col-12"><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : "Register patient"}</button></div>
+                <div className="col-12 d-flex gap-2"><button className="btn btn-primary" disabled={saving}>{saving ? "Saving…" : editingPatient ? "Save patient" : "Register patient"}</button>{editingPatient && <button className="btn btn-outline-secondary" type="button" onClick={() => { setEditingPatient(null); setPatientForm({ full_name: "", date_of_birth: "", gender: "", phone: "", email: "", address: "", blood_group: "", emergency_contact_name: "", emergency_contact_phone: "" }); }}>Cancel edit</button>}</div>
               </form>
             </div></section>
           </div>
@@ -232,36 +290,64 @@ function ReceptionDashboard() {
               </div></section>
             </div>
           </div>
-        </div>
+        </div>}
 
-        <section className="card mb-4"><div className="card-body">
+        {activeSection === "Patients" && <section className="card mb-4"><div className="card-body">
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3"><h2 className="h5 mb-0">Patients</h2><input className="form-control" style={{ maxWidth: 360 }} aria-label="Search patients" placeholder="Search patient ID, name, or phone" value={patientSearch} onChange={(event) => setPatientSearch(event.target.value)} /></div>
-          <div className="d-flex align-items-center gap-2 mb-3"><label className="small fw-semibold" htmlFor="payment-method">Manual payment method</label><select id="payment-method" className="form-select form-select-sm" style={{ maxWidth: 150 }} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Cash</option><option>Card</option><option>UPI</option></select></div>
-          {loading ? <div className="text-muted">Loading patients…</div> : filteredPatients.length ? <div className="table-responsive"><table className="table align-middle mb-0"><thead><tr><th>Patient ID</th><th>Name</th><th>Phone</th><th>Registration fee</th><th>Actions</th></tr></thead><tbody>{filteredPatients.map((patient) => <tr key={patient.id}><td>{formatId("PT", patient.id)}</td><td>{patient.full_name}<details className="small mt-1"><summary>History</summary><div className="mt-1">Appointments: {patient.appointment_history?.map((item) => `${formatDate(item.date)} · ${item.doctor} (${item.status})`).join("; ") || "None"}</div><div>Consultations: {patient.consultation_history?.map((item) => `${formatDate(item.date)} · ${item.doctor} (${item.status})`).join("; ") || "None"}</div></details></td><td>{patient.phone}</td><td>{patient.registration_fee ? money(patient.registration_fee) : money(dashboard?.registration_fee)}<div className="small text-secondary">{patient.registration_payment_status || "Pending"}</div></td><td className="text-nowrap"><button className="btn btn-sm btn-outline-secondary me-2" type="button" onClick={() => { setEditingPatient(patient); setPatientForm({ full_name: patient.full_name, date_of_birth: patient.date_of_birth, gender: patient.gender, phone: patient.phone, email: patient.email || "", address: patient.address }); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</button>{patient.registration_payment_status !== "Paid" && <button className="btn btn-sm btn-primary" type="button" disabled={saving} onClick={() => collectRegistrationFee(patient)}>Collect registration fee</button>}</td></tr>)}</tbody></table></div> : <div className="empty">No matching patients.</div>}
-        </div></section>
+          <div className="d-flex align-items-center gap-2 mb-3"><label className="small fw-semibold" htmlFor="payment-method">Payment method for registration and manual payments</label><select id="payment-method" className="form-select form-select-sm" style={{ maxWidth: 150 }} value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)}><option>Cash</option><option>Card</option><option>UPI</option></select></div>
+          {loading ? <div className="text-muted">Loading patients…</div> : filteredPatients.length ? (
+            <div className="table-responsive"><table className="table align-middle mb-0">
+              <thead><tr><th>Patient ID</th><th>Name</th><th>Phone</th><th>Registration fee</th><th>Actions</th></tr></thead>
+              <tbody>{filteredPatients.map((patient) => <tr key={patient.id}>
+                <td>{formatId("PT", patient.id)}</td>
+                <td>{patient.full_name}<details className="small mt-1"><summary>Details and history</summary>
+                  <div className="mt-1">{patient.email || "No email"} · Blood group: {patient.blood_group || "Not recorded"}</div>
+                  <div>Emergency contact: {patient.emergency_contact_name || "Not recorded"} {patient.emergency_contact_phone || ""}</div>
+                  <div>Appointments: {patient.appointment_history?.map((item) => `${formatDate(item.date)} · ${item.doctor} (${item.status})`).join("; ") || "None"}</div>
+                  <div>Consultations: {patient.consultation_history?.map((item) => `${formatDate(item.date)} · ${item.doctor} (${item.status})`).join("; ") || "None"}</div>
+                </details></td>
+                <td>{patient.phone}</td>
+                <td>{patient.registration_fee ? money(patient.registration_fee) : money(dashboard?.registration_fee)}<div className="small text-secondary">{patient.registration_payment_status || "Pending"}</div></td>
+                <td className="text-nowrap">
+                  <button className="btn btn-sm btn-outline-secondary me-2" type="button" onClick={() => { setEditingPatient(patient); setPatientForm({ full_name: patient.full_name, date_of_birth: patient.date_of_birth, gender: patient.gender, phone: patient.phone, email: patient.email || "", address: patient.address, blood_group: patient.blood_group || "", emergency_contact_name: patient.emergency_contact_name || "", emergency_contact_phone: patient.emergency_contact_phone || "" }); setActiveSection("Register & schedule"); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Edit</button>
+                  {patient.registration_payment_status !== "Paid" && <button className="btn btn-sm btn-primary me-2" type="button" disabled={saving} onClick={() => collectRegistrationFee(patient)}>Collect registration fee</button>}
+                  <button className="btn btn-sm btn-outline-danger" type="button" disabled={saving} onClick={() => deactivatePatient(patient)}>Deactivate</button>
+                </td>
+              </tr>)}</tbody>
+            </table></div>
+          ) : <div className="empty">No matching patients.</div>}
+        </div></section>}
 
-        <section className="card mb-4"><div className="card-body">
+        {activeSection === "Doctors" && <section className="card mb-4"><div className="card-body">
+          <h2 className="h5 mb-3">Available doctors</h2>
+          {doctors.length ? <div className="table-responsive"><table className="table align-middle mb-0"><thead><tr><th>Doctor</th><th>Department</th><th>Consultation fee</th><th>Schedule</th></tr></thead><tbody>
+            {doctors.map((doctor) => <tr key={doctor.id}><td>{doctor.name}</td><td>{doctor.department_name || "—"}</td><td>{money(doctor.consultation_fee)}</td><td>{doctor.consultation_days?.length ? `${doctor.consultation_days.join(", ")}${doctor.consultation_start_time ? ` · ${doctor.consultation_start_time.slice(0, 5)}–${doctor.consultation_end_time?.slice(0, 5)}` : ""}` : "Schedule not set"}</td></tr>)}
+          </tbody></table></div> : <div className="empty">No active doctors are available.</div>}
+        </div></section>}
+
+        {activeSection === "Today’s queue" && <section className="card mb-4"><div className="card-body">
           <div className="d-flex justify-content-between align-items-center mb-3"><h2 className="h5 mb-0">Today’s queue</h2><button className="btn btn-sm btn-outline-secondary" type="button" onClick={load}>Refresh</button></div>
           {loading ? <div className="text-muted">Loading reception records…</div> : dashboard?.queue?.length ? (
             <div className="table-responsive"><table className="table mb-0"><thead><tr><th>Token</th><th>Patient</th><th>Phone</th><th>Doctor</th><th>Visit type</th><th>Consultation fee</th><th>Status</th><th>Reception</th></tr></thead><tbody>
               {dashboard.queue.map((item) => <tr key={item.id}><td className="fw-semibold">{formatId("TK", item.token_number)}</td><td>{item.patient_name}</td><td>{item.patient_phone}</td><td>{item.doctor_name}</td><td>{item.token_type}</td><td>{item.consultation_fee == null ? "Not billed" : money(item.consultation_fee)}</td><td><span className={`badge text-bg-${item.status === "Active" ? "success" : item.status === "Completed" ? "secondary" : "info"}`}>{item.status}</span><div className="small text-secondary">Consultation: {item.consultation_payment_status}</div></td><td>{item.status === "Reserved" && item.registration_payment_status === "Paid" ? <button className="btn btn-sm btn-primary" type="button" disabled={saving} onClick={() => activatePaidToken(item)}>Activate paid token</button> : item.status === "Completed" && item.consultation_payment_status === "Pending" ? <button className="btn btn-sm btn-primary" type="button" disabled={saving} onClick={() => collectConsultationFee(item)}>Record manual payment</button> : item.status === "Active" ? <span className="text-success small fw-semibold">Waiting for doctor</span> : item.status === "Reserved" ? <span className="small text-secondary">Registration fee required</span> : "—"}</td></tr>)}
             </tbody></table></div>
           ) : <div className="empty">No patients are in the queue today.</div>}
-        </div></section>
+        </div></section>}
 
-        <section className="card mb-4"><div className="card-body">
+        {activeSection === "Payments" && <section className="card mb-4"><div className="card-body">
           <h2 className="h5 mb-3">Completed consultations awaiting payment</h2>
           {dashboard?.pending_consultation_bills?.length ? <div className="table-responsive"><table className="table align-middle mb-0"><thead><tr><th>Bill</th><th>Token</th><th>Patient</th><th>Doctor</th><th>Amount</th><th>Payment</th></tr></thead><tbody>{dashboard.pending_consultation_bills.map((bill) => <tr key={bill.id}><td>{formatId("CB", bill.id)}</td><td>{formatId("TK", bill.token_number)}</td><td>{bill.patient_name}</td><td>{bill.doctor_name}</td><td>{money(bill.amount)}</td><td><button className="btn btn-sm btn-primary" type="button" disabled={saving} onClick={() => collectConsultationFee(bill)}>Record manual payment</button></td></tr>)}</tbody></table></div> : <div className="empty">No completed consultations are awaiting payment.</div>}
-        </div></section>
+        </div></section>}
 
-        <section className="card"><div className="card-body">
+        {activeSection === "Appointments" && <section className="card"><div className="card-body">
           <div className="d-flex flex-wrap align-items-end justify-content-between gap-3 mb-3"><h2 className="h5 mb-0">Appointments</h2><div className="d-flex gap-2"><label className="small">Date<input className="form-control form-control-sm" type="date" value={appointmentDate} onChange={(event) => setAppointmentDate(event.target.value)} /></label><label className="small">Doctor<select className="form-select form-select-sm" value={appointmentDoctor} onChange={(event) => setAppointmentDoctor(event.target.value)}><option value="">All doctors</option>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}</select></label></div></div>
           {loading ? <div className="text-muted">Loading appointments…</div> : bookings.length ? (
             <div className="table-responsive"><table className="table mb-0"><thead><tr><th>Token</th><th>Patient</th><th>Doctor</th><th>Status</th><th>Actions</th></tr></thead><tbody>
           {bookings.map((booking) => <tr key={booking.id}><td>{booking.token_number ? formatId("TK", booking.token_number) : "Not issued"}</td><td>{booking.patient_name}</td><td>{booking.doctor_name}</td><td>{booking.status}</td><td>{rescheduling?.id === booking.id ? <div className="d-flex flex-wrap gap-2"><input className="form-control form-control-sm" style={{ maxWidth: 150 }} type="date" min={today()} value={rescheduling.date} onChange={(event) => setRescheduling({ ...rescheduling, date: event.target.value })} /><select className="form-select form-select-sm" style={{ maxWidth: 180 }} value={rescheduling.doctor} onChange={(event) => setRescheduling({ ...rescheduling, doctor: event.target.value })}>{doctors.map((doctor) => <option key={doctor.id} value={doctor.id}>{doctor.name}</option>)}</select><button className="btn btn-sm btn-primary" type="button" disabled={saving} onClick={() => saveReschedule(booking)}>Save</button><button className="btn btn-sm btn-outline-secondary" type="button" onClick={() => setRescheduling(null)}>Cancel</button></div> : <>{!booking.token_number && booking.status === "Reserved" && booking.registration_payment_status === "Paid" && booking.date === today() && <button className="btn btn-sm btn-primary me-2" type="button" disabled={saving} onClick={() => issueBookingToken(booking)}>Issue token</button>}{booking.status === "Reserved" && <><button className="btn btn-sm btn-outline-secondary me-2" type="button" onClick={() => setRescheduling({ id: booking.id, date: booking.date, doctor: String(booking.doctor) })}>Reschedule</button><button className="btn btn-sm btn-outline-danger" type="button" disabled={saving} onClick={async () => { try { await api.post(`reception/bookings/${booking.id}/cancel/`); await load(); } catch (requestError) { setError(errorMessage(requestError)); } }}>Cancel appointment</button></>}</>}</td></tr>)}
             </tbody></table></div>
           ) : <div className="empty">No appointments scheduled for today.</div>}
-        </div></section>
+        </div></section>}
+        </div>
       </main>
     </>
   );

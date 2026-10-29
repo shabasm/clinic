@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { errorMessage, formatDate, formatId, formatMoney } from "../../admin/services/api";
+import { errorMessage, formatDate, formatId } from "../../admin/services/api";
 import PharmacyNavbar from "../components/PharmacyNavbar";
 import { badgeColor, getDashboard, getPrescriptions } from "../services/pharmacyApi";
 
