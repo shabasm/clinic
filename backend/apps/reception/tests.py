@@ -88,6 +88,12 @@ class ReceptionWorkflowTests(TestCase):
         self.assertEqual(patient.address, "Updated address")
         self.assertTrue(RegistrationBill.objects.filter(patient=patient).exists())
 
+        deactivated = self.client.delete(f"/api/reception/patients/{patient.pk}/")
+        self.assertEqual(deactivated.status_code, 204)
+        patient.refresh_from_db()
+        self.assertFalse(patient.is_active)
+        self.assertTrue(RegistrationBill.objects.filter(patient=patient).exists())
+
     def test_duplicate_appointment_and_unavailable_schedule_are_rejected(self):
         patient = self.register_patient()
         self.doctor.consultation_days = ["Monday"]

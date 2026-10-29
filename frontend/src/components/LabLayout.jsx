@@ -11,13 +11,13 @@ const LINKS = [
 export default function LabLayout() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const username = localStorage.getItem("username") || localStorage.getItem("role") || "Lab Technician";
+  const displayName = localStorage.getItem("displayName") || "Lab Technician";
 
   const logout = () => {
     localStorage.removeItem("access");
     localStorage.removeItem("refresh");
     localStorage.removeItem("role");
-    localStorage.removeItem("username");
+    localStorage.removeItem("displayName");
     navigate("/login", { replace: true });
   };
 
@@ -25,7 +25,10 @@ export default function LabLayout() {
     <>
       <nav className="navbar navbar-expand-lg navbar-dark d-print-none">
         <div className="container-xl">
-          <NavLink className="navbar-brand" to="/lab/orders">✚ CareFlow</NavLink>
+          <div className="d-flex align-items-center text-nowrap">
+            <NavLink className="navbar-brand mb-0" to="/lab/orders">✚ CareFlow</NavLink>
+            <span className="navbar-text text-white-50">{displayName}</span>
+          </div>
           <button
             className="navbar-toggler"
             type="button"
@@ -36,7 +39,6 @@ export default function LabLayout() {
             <span className="navbar-toggler-icon" />
           </button>
           <div className={`collapse navbar-collapse ${open ? "show" : ""}`}>
-            <span className="navbar-text text-white-50 me-lg-auto">{username}</span>
             <ul className="navbar-nav ms-lg-auto">
               {LINKS.map((l) => (
                 <li className="nav-item" key={l.to}>

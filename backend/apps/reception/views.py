@@ -14,7 +14,7 @@ from .serializers import BookingSerializer, PatientSerializer, ReceptionDoctorSe
 
 class PatientViewSet(
     mixins.ListModelMixin, mixins.CreateModelMixin, mixins.RetrieveModelMixin,
-    mixins.UpdateModelMixin, viewsets.GenericViewSet
+    mixins.UpdateModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet
 ):
     serializer_class = PatientSerializer
     permission_classes = [IsAuthenticated, IsReceptionist]
@@ -54,6 +54,11 @@ class PatientViewSet(
             token = issue_token(patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
             issued.append(token.token_number)
         return Response({"payment_status": bill.payment_status, "amount": str(bill.total), "payment_method": method, "token_numbers": issued})
+
+    def perform_destroy(self, patient):
+        # Keep appointments, bills, and consultations attached to the patient.
+        patient.is_active = False
+        patient.save(update_fields=["is_active"])
 
 
 class DoctorViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
