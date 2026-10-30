@@ -33,11 +33,13 @@ function Login() {
         throw new Error("This account does not have a supported clinic role.");
       }
       localStorage.setItem("role", currentUser.role);
+      localStorage.setItem("displayName", currentUser.display_name);
       navigate(destination, { replace: true });
     } catch (requestError) {
       localStorage.removeItem("access");
       localStorage.removeItem("refresh");
       localStorage.removeItem("role");
+      localStorage.removeItem("displayName");
       setError(
         !requestError.response
           ? "Cannot reach the clinic API. Check that Django is running."

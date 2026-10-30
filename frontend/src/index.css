@@ -1,10 +1,11 @@
 :root {
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-  color: #17343b;
-  background: #f6f8f8;
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  color: #17243b;
+  background: #f3f6fb;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   --teal: #0f8b8d;
   --teal-dark: #0b7274;
   --ink: #17343b;
@@ -17,16 +18,30 @@
   --bs-link-hover-color-rgb: 11, 114, 116;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+}
+
 body {
   min-width: 320px;
   min-height: 100vh;
-  margin: 0;
   background: var(--soft);
   color: var(--ink);
 }
 
 #root {
   min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 .navbar {
@@ -197,4 +212,47 @@ body {
   background: var(--teal);
   color: #fff;
   font-size: 1.4rem;
+}
+
+@media print {
+  @page {
+    margin: 16mm;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .modal,
+  .modal *,
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .modal {
+    position: absolute !important;
+    inset: 0 !important;
+    display: block !important;
+    overflow: visible !important;
+    background: transparent !important;
+  }
+
+  .modal-dialog {
+    max-width: none !important;
+    margin: 0 !important;
+  }
+
+  .modal-content {
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .modal-body {
+    padding: 0 !important;
+  }
+
+  .modal-backdrop {
+    display: none !important;
+  }
 }
