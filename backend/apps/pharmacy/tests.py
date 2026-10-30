@@ -123,6 +123,22 @@ class PharmacyFlowTests(APITestCase):
         self.create_bill(pres2)
         self.assertEqual(self.client.post(f"{BASE}/prescriptions/{pres2.id}/decline/").status_code, 400)
 
+    def test_decline_partially_dispensed_prescription(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 6)])
+        item = pres.items.first()
+        res = self.create_bill(pres, items=[{"item_id": item.id, "quantity": 3}])
+        bill_id = res.data["id"]
+        self.client.post(f"{BASE}/bills/{bill_id}/pay/")
+        self.client.post(f"{BASE}/prescriptions/{pres.id}/dispense/")
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.PARTIAL)
+        dec_res = self.client.post(f"{BASE}/prescriptions/{pres.id}/decline/")
+        self.assertEqual(dec_res.status_code, 200)
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.DECLINED)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 3)
+
     def test_out_of_stock_item_blocks_default_bill(self):
         pres = self.make_prescription(self.patient1, [(self.para, 2), (self.amox, 3)])
         self.assertEqual(self.create_bill(pres).status_code, 400)

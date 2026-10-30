@@ -69,7 +69,6 @@ function BillDetails() {
       const updated = await payBill(id);
       setBill(updated);
       setSuccess("Payment confirmed successfully. The medicines are now ready to dispense.");
-      // Open the dispense modal window immediately after confirming payment
       setActiveModal("dispensePrompt");
     } catch (err) {
       setModalError(errorMessage(err));
@@ -340,10 +339,10 @@ function BillDetails() {
           </div>
         </div>
 
-        {/* Standalone Printable Receipt */}
-        <section>
+        {/* Standalone Printable Receipt - hidden on screen, printed when window.print() is called */}
+        <div className="d-none d-print-block">
           <ReceiptPrint bill={bill} />
-        </section>
+        </div>
       </main>
 
       {/* 1. Modal: Confirm Payment */}

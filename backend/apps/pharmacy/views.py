@@ -364,10 +364,10 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
     def decline(self, request, pk=None):
         with transaction.atomic():
             prescription = get_object_or_404(Prescription.objects.select_for_update(), pk=pk)
-            if prescription.status != Prescription.Status.PENDING:
-                raise ValidationError("Only a Pending prescription can be declined.")
-            if prescription.bills.exists():
-                raise ValidationError("A bill has already been created for this prescription.")
+            if prescription.status not in (Prescription.Status.PENDING, Prescription.Status.PARTIAL):
+                raise ValidationError("Only a Pending or Partially Dispensed prescription can be declined.")
+            if prescription.bills.filter(payment_status=PharmacyBill.PaymentStatus.PENDING).exists():
+                raise ValidationError("Please cancel or pay any unpaid bills before declining this prescription.")
             prescription.status = Prescription.Status.DECLINED
             prescription.save(update_fields=["status"])
         return Response(PrescriptionSerializer(prescription).data)
