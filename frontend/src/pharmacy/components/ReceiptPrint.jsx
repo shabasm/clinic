@@ -1,12 +1,13 @@
+import React from "react";
 import { formatDate, formatId, formatMoney } from "../../admin/services/api";
 
-function ReceiptPrint({ bill }) {
+const ReceiptPrint = React.forwardRef(function ReceiptPrint({ bill }, ref) {
   if (!bill) return null;
 
   const isPaid = bill.payment_status === "Paid";
 
   return (
-    <div className="pharmacy-receipt-container">
+    <div ref={ref} className="pharmacy-receipt-container print-area">
       <div className="pharmacy-receipt-header text-center">
         <h2 className="h4 fw-bold mb-1">✚ CareFlow Clinic</h2>
         <div className="text-secondary small">Pharmacy Dispensing & Payment Receipt</div>
@@ -91,6 +92,6 @@ function ReceiptPrint({ bill }) {
       </div>
     </div>
   );
-}
+});
 
 export default ReceiptPrint;
