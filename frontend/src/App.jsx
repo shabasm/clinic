@@ -9,15 +9,20 @@ import Login from "./admin/pages/Login";
 import Medicines from "./admin/pages/Medicines";
 import Staff from "./admin/pages/Staff";
 import StockRequest from "./admin/pages/StockRequest";
-import RoleNotice from "./shared/RoleNotice";
 import PharmacyRoutes from "./pharmacy/PharmacyRoutes";
+import LabLayout from "./components/LabLayout";
+import LabOrders from "./pages/lab/LabOrders";
+import LabResults from "./pages/lab/LabResults";
+import LabBills from "./pages/lab/LabBills";
+import DoctorDashboard from "./doctor/DoctorDashboard";
+import ReceptionDashboard from "./reception/ReceptionDashboard";
 
 const roleRoutes = {
   Admin: "/admin/dashboard",
   Doctor: "/doctor/dashboard",
   Receptionist: "/reception/dashboard",
   Pharmacist: "/pharmacy/dashboard",
-  "Lab Technician": "/lab/dashboard",
+  "Lab Technician": "/lab/orders",
 };
 
 function RequireRole({ roles, children }) {
@@ -39,7 +44,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/" element={<Navigate to={roleRoutes[localStorage.getItem("role")] || "/login"} replace />} />
+        <Route path="/" element={<Navigate to= "/login" replace />} />
         <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
         <Route path="/admin/staff" element={<AdminRoute><Staff /></AdminRoute>} />
         <Route path="/admin/credentials" element={<AdminRoute><Credentials /></AdminRoute>} />
@@ -50,9 +55,16 @@ function App() {
         <Route path="/admin/charges" element={<AdminRoute><Charges /></AdminRoute>} />
         <Route path="/admin/stock-requests" element={<AdminRoute><StockRequest /></AdminRoute>} />
         <Route path="/pharmacy/*" element={<RequireRole roles={["Pharmacist"]}><PharmacyRoutes /></RequireRole>} />
-        <Route path="/lab/dashboard" element={<RequireRole roles={["Lab Technician"]}><RoleNotice title="Lab workspace" message="Lab workflows are outside the Admin module." /></RequireRole>} />
-        <Route path="/doctor/dashboard" element={<RequireRole roles={["Doctor"]}><RoleNotice title="Doctor workspace" message="Doctor frontend and API workflows are not yet available in this project." /></RequireRole>} />
-        <Route path="/reception/dashboard" element={<RequireRole roles={["Receptionist"]}><RoleNotice title="Reception workspace" message="Reception frontend and API workflows are not yet available in this project." /></RequireRole>} />
+        <Route path="/lab" element={<RequireRole roles={["Lab Technician"]}><LabLayout /></RequireRole>}>
+          <Route index element={<Navigate to="/lab/orders" replace />} />
+          <Route path="dashboard" element={<Navigate to="/lab/orders" replace />} />
+          <Route path="orders" element={<LabOrders />} />
+          <Route path="results" element={<LabResults />} />
+          <Route path="bills" element={<LabBills />} />
+          <Route path="*" element={<Navigate to="/lab/orders" replace />} />
+        </Route>
+        <Route path="/doctor/dashboard" element={<RequireRole roles={["Doctor"]}><DoctorDashboard /></RequireRole>} />
+        <Route path="/reception/dashboard" element={<RequireRole roles={["Receptionist"]}><ReceptionDashboard /></RequireRole>} />
         <Route path="*" element={<Navigate to={roleRoutes[localStorage.getItem("role")] || "/login"} replace />} />
       </Routes>
     </BrowserRouter>

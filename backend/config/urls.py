@@ -20,6 +20,9 @@ urlpatterns = [
     ),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
 
+    # Reception APIs
+    path('api/reception/', include('apps.reception.urls')),
+
     # Admin Module APIs
     path('api/', include('apps.admin_module.urls')),
 

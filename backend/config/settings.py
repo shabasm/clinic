@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 
 from pathlib import Path
 from datetime import timedelta
+from django.core.exceptions import ImproperlyConfigured
 
 from decouple import config as db_config
 
@@ -23,11 +24,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = db_config("SECRET_KEY")
+DEBUG = db_config("DJANGO_DEBUG", default=True, cast=bool)
+SECRET_KEY = db_config("SECRET_KEY", default="")
+if not SECRET_KEY:
+    if not DEBUG:
+        raise ImproperlyConfigured("Set SECRET_KEY when DEBUG is disabled.")
+    SECRET_KEY = "django-insecure-local-development-only-key"
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = db_config(
+    "ALLOWED_HOSTS",
+    default="localhost,127.0.0.1,[::1]",
+).split(",")
 
 
 # Application definition
@@ -65,6 +73,8 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -90,18 +100,27 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
-DATABASES = {
-
-    "default": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": db_config("DB_NAME"),
-        "USER": db_config("DB_USER"),
-        "PASSWORD": db_config("DB_PASSWORD"),
-        "HOST": db_config("DB_HOST", default="localhost"),
-        "PORT": db_config("DB_PORT", default="3306"),
-
+DB_NAME = db_config("DB_NAME", default="")
+if DB_NAME:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.mysql",
+            "NAME": DB_NAME,
+            "USER": db_config("DB_USER"),
+            "PASSWORD": db_config("DB_PASSWORD"),
+            "HOST": db_config("DB_HOST", default="localhost"),
+            "PORT": db_config("DB_PORT", default="3306"),
+        }
     }
-}
+else:
+    if not DEBUG:
+        raise ImproperlyConfigured("Set DB_NAME when DEBUG is disabled.")
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
 
 # Password validation
@@ -170,6 +189,6 @@ REST_FRAMEWORK = {
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=360),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
-    "ROTATE_REFRESH_TOKEN": False,  # Old refresh token is replaced by a new refresh token 
+    "ROTATE_REFRESH_TOKEN": False,  # Old refresh token is replaced by a new refresh token
     "BLACKLIST_AFTER_ROTATION": False   # determines whether old refresh token should be blacklisted after new to ken is generated
 }

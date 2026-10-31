@@ -11,6 +11,8 @@ function Credentials() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [mode, setMode] = useState("create");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -193,12 +195,61 @@ function Credentials() {
                   <div className="form-text">4-20 characters: letters, numbers, . and _.</div>
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label required" htmlFor="credential_password">{mode === "create" ? "Password" : "New password"}</label>
-                  <div className="input-group"><input id="credential_password" className="form-control" type="password" autoComplete="new-password" required minLength="8" pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,}" title="Use 8+ characters with a letter and number." value={password} onChange={(event) => setPassword(event.target.value)} /></div>
+                  <label
+                    className="form-label required"
+                    htmlFor="credential_password"
+                  >
+                    {mode === "create" ? "Password" : "New password"}
+                  </label>
+
+                  <div className="input-group">
+                    <input
+                      id="credential_password"
+                      className="form-control"
+                      type={showPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      minLength="8"
+                      pattern="(?=.*[A-Za-z])(?=.*[0-9]).{8,}"
+                      title="Use 8+ characters with a letter and number."
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-outline-secondary"
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
                 <div className="col-md-6">
-                  <label className="form-label required" htmlFor="credential_confirm">Confirm password</label>
-                  <input id="credential_confirm" className="form-control" type="password" autoComplete="new-password" required minLength="8" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} />
+                  <label className="form-label required" htmlFor="credential_confirm">
+                    Confirm password
+                  </label>
+
+                  <div className="input-group">
+                    <input
+                      id="credential_confirm"
+                      className="form-control"
+                      type={showConfirmPassword ? "text" : "password"}
+                      autoComplete="new-password"
+                      required
+                      minLength="8"
+                      value={confirmPassword}
+                      onChange={(event) => setConfirmPassword(event.target.value)}
+                    />
+
+                    <button
+                      className="btn btn-outline-secondary"
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    >
+                      {showConfirmPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
                 </div>
                 <div className="col-12"><div className="form-text">At least 8 characters, with at least one letter and one number.</div></div>
               </div>

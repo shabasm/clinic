@@ -195,7 +195,11 @@ class CurrentUserView(APIView):
     def get(self, request):
         user = request.user
         if user.is_staff:
-            return Response({"username": user.username, "role": "Admin"})
+            return Response({
+                "username": user.username,
+                "role": "Admin",
+                "display_name": "Administrator",
+            })
 
         staff = getattr(user, "staff", None)
         if staff is None or not staff.is_active:
@@ -204,7 +208,11 @@ class CurrentUserView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
 
-        return Response({"username": user.username, "role": staff.role})
+        return Response({
+            "username": user.username,
+            "role": staff.role,
+            "display_name": staff.full_name,
+        })
 
 
 class StaffCredentialsView(APIView):
