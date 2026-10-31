@@ -19,10 +19,10 @@ function DoctorNavbar() {
   const displayName = localStorage.getItem("displayName") || "Doctor";
 
   return (
-    <nav className="navbar navbar-expand-xl navbar-dark bg-dark d-print-none shadow-sm mb-4">
+    <nav className="navbar navbar-expand-xl navbar-dark d-print-none">
       <div className="container-xl">
         <div className="d-flex align-items-center text-nowrap">
-          <NavLink className="navbar-brand fw-bold mb-0 text-white" to="/doctor/queue">
+          <NavLink className="navbar-brand fw-bold mb-0" to="/doctor/queue">
             ✚ CareFlow
           </NavLink>
           <span className="navbar-text text-white-50 ms-2">
@@ -49,7 +49,7 @@ function DoctorNavbar() {
                 key={menu.path}
                 to={menu.path}
                 className={({ isActive }) =>
-                  `nav-link px-3 ${isActive ? "active fw-semibold text-white" : "text-white-50"}`
+                  `nav-link px-3 ${isActive ? "active fw-bold" : ""}`
                 }
               >
                 {menu.name}
@@ -57,15 +57,13 @@ function DoctorNavbar() {
             ))}
           </div>
 
-          <div className="d-flex align-items-center ms-xl-3 mt-3 mt-xl-0">
-            <button
-              type="button"
-              className="btn btn-outline-light btn-sm"
-              onClick={logout}
-            >
-              Log out
-            </button>
-          </div>
+          <button
+            type="button"
+            className="btn btn-light btn-sm ms-xl-3 mt-2 mt-xl-0"
+            onClick={logout}
+          >
+            Logout
+          </button>
         </div>
       </div>
     </nav>

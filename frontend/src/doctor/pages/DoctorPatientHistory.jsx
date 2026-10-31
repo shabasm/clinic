@@ -64,19 +64,19 @@ function DoctorPatientHistory() {
   return (
     <>
       <DoctorNavbar />
-      <main className="container-xl admin-main pb-5">
+      <main className="container admin-main">
         <header className="page-header mb-4">
-          <h1 className="h3 mb-1">Patient Medical History</h1>
-          <p className="text-secondary mb-0">
+          <h1 className="mb-1">Patient medical history</h1>
+          <p className="mb-0">
             Comprehensive longitudinal record of patient visits, prescriptions, and laboratory diagnostics.
           </p>
         </header>
 
         {/* Patient Search Section */}
-        <div className="card shadow-sm border-0 mb-4 position-relative">
+        <div className="card mb-4 position-relative">
           <div className="card-body">
-            <label className="form-label small fw-semibold text-secondary">
-              Search Patient by Name or Phone
+            <label className="form-label">
+              Search patient by name or phone
             </label>
             <div className="input-group">
               <input
@@ -118,7 +118,7 @@ function DoctorPatientHistory() {
                       <span className="badge text-bg-light border">{formatId("PAT", p.id)}</span>
                     </div>
                     <div className="small text-secondary">
-                      {p.gender} · {p.age ? `${p.age} yrs` : "—"} · Phone: {p.phone || "—"}
+                      {p.gender} &bull; {p.age ? `${p.age} yrs` : "—"} &bull; Phone: {p.phone || "—"}
                     </div>
                   </button>
                 ))}
@@ -128,72 +128,70 @@ function DoctorPatientHistory() {
         </div>
 
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show" role="alert">
+          <div className="alert alert-danger" role="alert">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError("")}></button>
           </div>
         )}
 
         {loading && (
-          <div className="text-center py-5 text-secondary">
-            <div className="spinner-border spinner-border-sm me-2" role="status"></div>
+          <div className="text-muted py-4">
             Loading patient history...
           </div>
         )}
 
         {!loading && !patientData && !selectedPatientId && (
-          <div className="card shadow-sm border-0 text-center py-5 text-secondary">
-            <div className="mb-2 fs-1">👤</div>
-            <h5 className="text-dark">No patient selected</h5>
-            <p className="small mb-0">
-              Use the search bar above to look up a patient and view their complete medical history.
-            </p>
+          <div className="card mb-4">
+            <div className="card-body empty py-5">
+              <h5 className="text-dark">No patient selected</h5>
+              <p className="small mb-0 text-muted">
+                Use the search bar above to look up a patient and view their complete medical history.
+              </p>
+            </div>
           </div>
         )}
 
         {!loading && patientData && (
           <>
-            {/* Demographics Card */}
-            <div className="card shadow-sm border-0 mb-4 bg-light">
+            {/* Patient Demographics Summary Card */}
+            <div className="card mb-4">
               <div className="card-body">
-                <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                  <div>
-                    <h2 className="h4 mb-0 text-dark fw-bold">{pat?.full_name}</h2>
-                    <div className="text-secondary small">
-                      {formatId("PAT", pat?.id)} · {pat?.gender} ·{" "}
-                      {pat?.age ? `${pat.age} yrs` : "—"} · Blood Group: {pat?.blood_group || "—"}
+                <div className="row g-3">
+                  <div className="col-md-3 col-6">
+                    <div className="small text-secondary">Patient</div>
+                    <div className="fw-semibold">{pat?.full_name}</div>
+                    <div className="small text-muted">{formatId("PAT", pat?.id)}</div>
+                  </div>
+                  <div className="col-md-3 col-6">
+                    <div className="small text-secondary">Age / Gender</div>
+                    <div className="fw-semibold">
+                      {pat?.age ? `${pat.age} yrs` : "—"} &bull; {pat?.gender}
                     </div>
-                  </div>
-                  <span className="badge text-bg-success px-3 py-2">
-                    {pat?.is_active ? "Active Patient" : "Inactive"}
-                  </span>
-                </div>
-                <div className="row g-2 text-secondary small">
-                  <div className="col-md-3 col-6">
-                    <strong>Phone:</strong> {pat?.phone || "—"}
+                    <div className="small text-muted">Blood: {pat?.blood_group || "—"}</div>
                   </div>
                   <div className="col-md-3 col-6">
-                    <strong>Email:</strong> {pat?.email || "—"}
+                    <div className="small text-secondary">Contact details</div>
+                    <div className="fw-semibold">{pat?.phone || "—"}</div>
+                    <div className="small text-muted text-truncate">{pat?.email || pat?.address || "—"}</div>
                   </div>
                   <div className="col-md-3 col-6">
-                    <strong>Address:</strong> {pat?.address || "—"}
-                  </div>
-                  <div className="col-md-3 col-6">
-                    <strong>Emergency Contact:</strong>{" "}
-                    {pat?.emergency_contact_name
-                      ? `${pat.emergency_contact_name} (${pat.emergency_contact_phone || "—"})`
-                      : "—"}
+                    <div className="small text-secondary">Emergency contact</div>
+                    <div className="fw-semibold">
+                      {pat?.emergency_contact_name || "—"}
+                    </div>
+                    <div className="small text-muted">
+                      {pat?.emergency_contact_phone || ""}
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
 
             {/* Navigation Tabs */}
-            <ul className="nav nav-tabs mb-4">
+            <ul className="nav doctor-tabs mb-4">
               <li className="nav-item">
                 <button
                   type="button"
-                  className={`nav-link ${activeTab === "consultations" ? "active fw-bold" : ""}`}
+                  className={`nav-link ${activeTab === "consultations" ? "active" : ""}`}
                   onClick={() => setActiveTab("consultations")}
                 >
                   Consultations ({patientData.consultations?.length || 0})
@@ -202,7 +200,7 @@ function DoctorPatientHistory() {
               <li className="nav-item">
                 <button
                   type="button"
-                  className={`nav-link ${activeTab === "prescriptions" ? "active fw-bold" : ""}`}
+                  className={`nav-link ${activeTab === "prescriptions" ? "active" : ""}`}
                   onClick={() => setActiveTab("prescriptions")}
                 >
                   Prescriptions ({patientData.prescriptions?.length || 0})
@@ -211,7 +209,7 @@ function DoctorPatientHistory() {
               <li className="nav-item">
                 <button
                   type="button"
-                  className={`nav-link ${activeTab === "lab" ? "active fw-bold" : ""}`}
+                  className={`nav-link ${activeTab === "lab" ? "active" : ""}`}
                   onClick={() => setActiveTab("lab")}
                 >
                   Laboratory Tests & Diagnostic Results ({patientData.lab_records?.length || 0})
@@ -221,10 +219,10 @@ function DoctorPatientHistory() {
 
             {/* Tab 1: Consultations */}
             {activeTab === "consultations" && (
-              <div className="card shadow-sm border-0">
+              <div className="card mb-4">
                 <div className="table-responsive">
                   <table className="table table-hover align-middle mb-0">
-                    <thead className="table-light">
+                    <thead>
                       <tr>
                         <th style={{ width: "140px" }}>Date</th>
                         <th>Doctor / Department</th>
@@ -236,7 +234,7 @@ function DoctorPatientHistory() {
                     <tbody>
                       {patientData.consultations?.length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="text-center py-4 text-secondary">
+                          <td colSpan="5" className="empty">
                             No consultation records found for this patient.
                           </td>
                         </tr>
@@ -282,15 +280,17 @@ function DoctorPatientHistory() {
 
             {/* Tab 2: Prescriptions */}
             {activeTab === "prescriptions" && (
-              <div className="d-flex flex-column gap-3">
+              <div className="d-flex flex-column gap-3 mb-4">
                 {patientData.prescriptions?.length === 0 ? (
-                  <div className="card shadow-sm border-0 text-center py-4 text-secondary">
-                    No prescriptions found for this patient.
+                  <div className="card mb-4">
+                    <div className="card-body empty">
+                      No prescriptions found for this patient.
+                    </div>
                   </div>
                 ) : (
                   patientData.prescriptions?.map((rx) => (
-                    <div key={rx.id} className="card shadow-sm border-0">
-                      <div className="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                    <div key={rx.id} className="card">
+                      <div className="card-body pb-0 d-flex justify-content-between align-items-center mb-2">
                         <div>
                           <strong>Prescription {formatId("RX", rx.id)}</strong> &bull;{" "}
                           <span className="text-secondary small">{formatDate(rx.date)}</span> &bull;{" "}
@@ -312,7 +312,7 @@ function DoctorPatientHistory() {
                       </div>
                       <div className="table-responsive">
                         <table className="table table-sm table-hover align-middle mb-0">
-                          <thead className="table-light">
+                          <thead>
                             <tr>
                               <th>Medicine Name</th>
                               <th>Instructions</th>
@@ -346,10 +346,10 @@ function DoctorPatientHistory() {
 
             {/* Tab 3: Laboratory Tests & Diagnostic Results */}
             {activeTab === "lab" && (
-              <div className="card shadow-sm border-0">
+              <div className="card mb-4">
                 <div className="table-responsive">
                   <table className="table table-hover align-middle mb-0">
-                    <thead className="table-light">
+                    <thead>
                       <tr>
                         <th>Test Name</th>
                         <th style={{ width: "120px" }}>Order Date</th>
@@ -364,7 +364,7 @@ function DoctorPatientHistory() {
                     <tbody>
                       {patientData.lab_records?.length === 0 ? (
                         <tr>
-                          <td colSpan="8" className="text-center py-4 text-secondary">
+                          <td colSpan="8" className="empty">
                             No laboratory test records found for this patient.
                           </td>
                         </tr>

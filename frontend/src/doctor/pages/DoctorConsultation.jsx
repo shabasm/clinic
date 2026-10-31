@@ -71,7 +71,6 @@ function DoctorConsultation() {
     if (id) {
       loadData(id);
     } else if (tokenIdParam) {
-      // Start or resume consultation for token
       startConsultation(tokenIdParam)
         .then((res) => {
           navigate(`/doctor/consultation/${res.id}`, { replace: true });
@@ -121,7 +120,7 @@ function DoctorConsultation() {
     }
     const qty = parseInt(medQty, 10);
     if (!qty || qty <= 0) {
-      setMedModalError("Quantity must be a positive integer.");
+      setMedModalError("Quantity must be a positive whole number.");
       return;
     }
     if (qty > med.stock_quantity) {
@@ -129,7 +128,6 @@ function DoctorConsultation() {
       return;
     }
 
-    // Check if already in prescription
     const existingIndex = prescriptionItems.findIndex((p) => p.medicine_id === med.id);
     if (existingIndex >= 0) {
       const updated = [...prescriptionItems];
@@ -210,7 +208,7 @@ function DoctorConsultation() {
         lab_test_ids: Array.from(selectedLabTestIds),
       };
       await completeConsultation(id, payload);
-      setSuccess("Consultation completed successfully. Records and orders have been sent.");
+      setSuccess("Consultation completed successfully. Orders and bills have been forwarded.");
       loadData(id);
     } catch (err) {
       setError(errorMessage(err));
@@ -241,20 +239,20 @@ function DoctorConsultation() {
           <meta charset="utf-8" />
           <title>Prescription Slip — ${consultation?.patient?.full_name}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 2rem; color: #1e293b; }
-            .header { border-bottom: 2px solid #0f172a; padding-bottom: 1rem; margin-bottom: 1.5rem; }
-            .clinic-title { font-size: 1.5rem; font-weight: bold; color: #0284c7; }
-            .clinic-sub { font-size: 0.85rem; color: #64748b; }
+            body { font-family: Inter, Arial, sans-serif; margin: 2rem; color: #17343b; }
+            .header { border-bottom: 2px solid #0f8b8d; padding-bottom: 1rem; margin-bottom: 1.5rem; }
+            .clinic-title { font-size: 1.5rem; font-weight: bold; color: #0f8b8d; }
+            .clinic-sub { font-size: 0.85rem; color: #6c7c80; }
             .doc-info { margin-top: 0.5rem; font-size: 0.95rem; }
-            .patient-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; }
+            .patient-box { background: #f6f8f8; border: 1px solid #dce7e7; border-radius: 6px; padding: 1rem; margin-bottom: 1.5rem; }
             .patient-grid { display: flex; flex-wrap: wrap; gap: 1rem 2rem; font-size: 0.9rem; }
-            .rx-title { font-size: 1.1rem; font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 0.4rem; margin-bottom: 1rem; }
+            .rx-title { font-size: 1.1rem; font-weight: bold; border-bottom: 1px solid #dce7e7; padding-bottom: 0.4rem; margin-bottom: 1rem; color: #0f8b8d; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 2rem; }
-            th { text-align: left; padding: 0.5rem; border-bottom: 2px solid #cbd5e1; font-size: 0.85rem; color: #475569; }
-            td { padding: 0.6rem 0.5rem; border-bottom: 1px solid #e2e8f0; font-size: 0.9rem; }
-            .notes { background: #f1f5f9; padding: 0.8rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 2rem; }
+            th { text-align: left; padding: 0.5rem; border-bottom: 2px solid #dce7e7; font-size: 0.85rem; color: #51696d; background: #eef4f4; }
+            td { padding: 0.6rem 0.5rem; border-bottom: 1px solid #dce7e7; font-size: 0.9rem; }
+            .notes { background: #f6f8f8; padding: 0.8rem; border-radius: 4px; font-size: 0.85rem; margin-bottom: 2rem; border-left: 3px solid #0f8b8d; }
             .signature { margin-top: 3rem; text-align: right; }
-            .sign-line { display: inline-block; width: 200px; border-top: 1px solid #475569; padding-top: 0.5rem; font-size: 0.9rem; }
+            .sign-line { display: inline-block; width: 200px; border-top: 1px solid #6c7c80; padding-top: 0.5rem; font-size: 0.9rem; }
             @media print { body { margin: 1rem; } }
           </style>
         </head>
@@ -281,9 +279,12 @@ function DoctorConsultation() {
     return (
       <>
         <DoctorNavbar />
-        <main className="container-xl admin-main py-5 text-center text-secondary">
-          <div className="spinner-border spinner-border-sm me-2" role="status"></div>
-          Loading consultation workspace...
+        <main className="container admin-main">
+          <header className="page-header">
+            <h1 className="mb-1">Consultation details</h1>
+            <p className="mb-0">Loading patient visit record...</p>
+          </header>
+          <div className="text-muted">Loading ...</div>
         </main>
       </>
     );
@@ -293,9 +294,13 @@ function DoctorConsultation() {
     return (
       <>
         <DoctorNavbar />
-        <main className="container-xl admin-main py-5">
+        <main className="container admin-main">
+          <header className="page-header">
+            <h1 className="mb-1">Consultation details</h1>
+            <p className="mb-0">Record not found.</p>
+          </header>
           <div className="alert alert-danger" role="alert">
-            {error || "Consultation record not found."}
+            {error || "Could not find the requested consultation."}
           </div>
           <Link to="/doctor/queue" className="btn btn-outline-secondary">
             Back to Queue
@@ -320,114 +325,102 @@ function DoctorConsultation() {
   return (
     <>
       <DoctorNavbar />
-      <main className="container-xl admin-main pb-5">
-        {/* Header navigation and status */}
-        <header className="page-header d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
-          <div className="d-flex align-items-center gap-3">
-            <Link to="/doctor/queue" className="btn btn-outline-secondary btn-sm">
-              &larr; Back to Queue
-            </Link>
-            <div>
-              <h1 className="h3 mb-0">
-                Consultation {formatId("CNS", consultation.id)}
-              </h1>
-              <span className="text-secondary small">
-                Token #{tok?.token_number} · {tok?.token_type || "Walk-In"}
-              </span>
-            </div>
+      <main className="container admin-main">
+        {/* Page Header */}
+        <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
+          <div>
+            <h1 className="mb-1">
+              Consultation {formatId("CNS", consultation.id)}
+            </h1>
+            <p className="mb-0">
+              Token #{tok?.token_number} &bull; {tok?.token_type || "Walk-In"}
+            </p>
           </div>
-          <div className="d-flex align-items-center gap-2">
-            <span
-              className={`badge px-3 py-2 fs-6 ${
-                isCompleted ? "text-bg-success" : "text-bg-info"
-              }`}
-            >
-              {consultation.status}
-            </span>
+          <div className="d-flex gap-2 flex-wrap">
             {isCompleted && (
               <button
                 type="button"
-                className="btn btn-primary btn-sm"
+                className="btn btn-outline-primary"
                 onClick={handlePrintSlip}
               >
-                Print Prescription Slip
+                Print prescription
               </button>
             )}
+            <Link to="/doctor/queue" className="btn btn-outline-secondary">
+              Back to Queue
+            </Link>
           </div>
         </header>
 
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show" role="alert">
+          <div className="alert alert-danger" role="alert">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError("")}></button>
           </div>
         )}
         {success && (
-          <div className="alert alert-success alert-dismissible fade show" role="alert">
+          <div className="alert alert-success" role="status">
             {success}
-            <button type="button" className="btn-close" onClick={() => setSuccess("")}></button>
           </div>
         )}
 
         {isCompleted && (
           <div className="alert alert-success d-flex align-items-center justify-content-between mb-4">
             <div>
-              <strong>Consultation Completed.</strong> Completed on{" "}
+              <strong>Consultation completed.</strong> Closed on{" "}
               {formatDate(consultation.completed_at)}. This record is read-only.
             </div>
           </div>
         )}
 
-        {/* Patient Demographics Card */}
-        <div className="card shadow-sm border-0 mb-4 bg-light">
+        {/* Patient Summary Card — Matches PrescriptionDetails styling */}
+        <div className="card mb-4">
           <div className="card-body">
-            <div className="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-              <div>
-                <h2 className="h4 mb-0 text-dark fw-bold">{pat?.full_name}</h2>
-                <div className="text-secondary small">
-                  {formatId("PAT", pat?.id)} · {pat?.gender} ·{" "}
-                  {pat?.age ? `${pat.age} yrs` : "—"} · Blood: {pat?.blood_group || "—"}
+            <div className="row g-3">
+              <div className="col-md-3 col-6">
+                <div className="small text-secondary">Patient</div>
+                <div className="fw-semibold">{pat?.full_name}</div>
+                <div className="small text-muted">{formatId("PAT", pat?.id)}</div>
+              </div>
+              <div className="col-md-3 col-6">
+                <div className="small text-secondary">Age / Gender</div>
+                <div className="fw-semibold">
+                  {pat?.age ? `${pat.age} yrs` : "—"} &bull; {pat?.gender}
                 </div>
-              </div>
-              <Link
-                to={`/doctor/patient-history?patient=${pat?.id}`}
-                className="btn btn-sm btn-outline-primary"
-              >
-                View Full Patient History &rarr;
-              </Link>
-            </div>
-            <div className="row g-2 text-secondary small">
-              <div className="col-md-3 col-6">
-                <strong>Phone:</strong> {pat?.phone || "—"}
+                <div className="small text-muted">Blood: {pat?.blood_group || "—"}</div>
               </div>
               <div className="col-md-3 col-6">
-                <strong>Address:</strong> {pat?.address || "—"}
+                <div className="small text-secondary">Phone / Address</div>
+                <div className="fw-semibold">{pat?.phone || "—"}</div>
+                <div className="small text-muted text-truncate">{pat?.address || "—"}</div>
               </div>
               <div className="col-md-3 col-6">
-                <strong>Emergency Contact:</strong>{" "}
-                {pat?.emergency_contact_name
-                  ? `${pat.emergency_contact_name} (${pat.emergency_contact_phone || "—"})`
-                  : "—"}
-              </div>
-              <div className="col-md-3 col-6">
-                <strong>Registered:</strong> {formatDate(pat?.registration_date)}
+                <div className="small text-secondary">Status</div>
+                <div className="d-flex align-items-center gap-2 mt-1">
+                  <span className={`badge text-bg-${isCompleted ? "success" : "info"}`}>
+                    {consultation.status}
+                  </span>
+                  <Link
+                    to={`/doctor/patient-history?patient=${pat?.id}`}
+                    className="small text-decoration-none"
+                  >
+                    History &rarr;
+                  </Link>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Main 2-Column Layout: Left = Workspace, Right = Reference History */}
+        {/* Main 2-Column Layout */}
         <div className="row g-4">
           {/* Left Column: Workspace */}
           <div className="col-lg-8">
-            {/* Diagnosis & Clinical Notes */}
-            <div className="card shadow-sm border-0 mb-4">
-              <div className="card-header bg-white py-3">
-                <h3 className="h5 mb-0 fw-bold">Clinical Examination</h3>
-              </div>
+            {/* Clinical Notes & Diagnosis */}
+            <div className="card mb-4">
               <div className="card-body">
+                <h2 className="h5 mb-3">Clinical examination</h2>
                 <div className="mb-3">
-                  <label htmlFor="diagInput" className="form-label fw-semibold">
+                  <label htmlFor="diagInput" className="form-label">
                     Diagnosis <span className="text-danger">*</span>
                   </label>
                   <input
@@ -441,14 +434,14 @@ function DoctorConsultation() {
                   />
                 </div>
                 <div>
-                  <label htmlFor="notesInput" className="form-label fw-semibold">
-                    Clinical Notes & Observations <span className="text-danger">*</span>
+                  <label htmlFor="notesInput" className="form-label">
+                    Clinical notes & observations <span className="text-danger">*</span>
                   </label>
                   <textarea
                     id="notesInput"
                     className="form-control"
                     rows="4"
-                    placeholder="Symptoms, physical vitals, patient complaints, clinical findings, treatment advice..."
+                    placeholder="Symptoms, physical vitals, complaints, findings, advice..."
                     value={clinicalNotes}
                     disabled={isCompleted}
                     onChange={(e) => setClinicalNotes(e.target.value)}
@@ -458,25 +451,25 @@ function DoctorConsultation() {
             </div>
 
             {/* Prescriptions Section */}
-            <div className="card shadow-sm border-0 mb-4">
-              <div className="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-                <h3 className="h5 mb-0 fw-bold">Prescription Medicines</h3>
+            <div className="card mb-4">
+              <div className="card-body pb-0 d-flex justify-content-between align-items-center mb-3">
+                <h2 className="h5 mb-0">Prescription medicines</h2>
                 {!isCompleted && (
                   <button
                     type="button"
                     className="btn btn-sm btn-outline-primary"
                     onClick={handleOpenMedModal}
                   >
-                    + Add Medicine
+                    + Add medicine
                   </button>
                 )}
               </div>
               <div className="table-responsive">
                 <table className="table table-hover align-middle mb-0">
-                  <thead className="table-light">
+                  <thead>
                     <tr>
-                      <th>Medicine Name</th>
-                      <th>Instructions / Dosage</th>
+                      <th>Medicine</th>
+                      <th>Instructions</th>
                       <th className="text-center" style={{ width: "90px" }}>Qty</th>
                       {!isCompleted && (
                         <th className="text-end" style={{ width: "70px" }}>Action</th>
@@ -488,7 +481,7 @@ function DoctorConsultation() {
                       <tr>
                         <td
                           colSpan={isCompleted ? 3 : 4}
-                          className="text-center py-3 text-secondary"
+                          className="empty"
                         >
                           No medicines prescribed for this consultation.
                         </td>
@@ -500,7 +493,7 @@ function DoctorConsultation() {
                             <div className="fw-semibold text-dark">{item.medicine_name}</div>
                             {item.unit_price && (
                               <div className="small text-muted">
-                                Unit Price: {formatMoney(item.unit_price)}
+                                Price: {formatMoney(item.unit_price)}
                               </div>
                             )}
                           </td>
@@ -531,30 +524,25 @@ function DoctorConsultation() {
             </div>
 
             {/* Laboratory Tests Section */}
-            <div className="card shadow-sm border-0 mb-4">
-              <div className="card-header bg-white py-3">
-                <h3 className="h5 mb-0 fw-bold">Laboratory Investigations</h3>
-                <p className="text-secondary small mb-0">
-                  Select diagnostic tests to recommend. Orders will be forwarded to the Laboratory.
-                </p>
-              </div>
+            <div className="card mb-4">
               <div className="card-body">
+                <h2 className="h5 mb-1">Laboratory investigations</h2>
+                <p className="text-secondary small mb-3">
+                  Select diagnostic tests to recommend. Orders will be forwarded to the laboratory.
+                </p>
+
                 {availableLabTests.length === 0 ? (
-                  <div className="text-secondary small">No laboratory tests configured.</div>
+                  <div className="text-muted small">No active laboratory tests configured.</div>
                 ) : (
                   <div className="row g-3">
                     {availableLabTests.map((t) => {
                       const checked = selectedLabTestIds.has(t.id);
                       return (
                         <div key={t.id} className="col-md-6">
-                          <div
-                            className={`p-3 border rounded h-100 ${
-                              checked ? "border-primary bg-primary bg-opacity-10" : "bg-light"
-                            }`}
-                          >
+                          <div className={`doctor-lab-card ${checked ? "selected" : ""}`}>
                             <div className="form-check">
                               <input
-                                className="form-check-input"
+                                className="form-check-input cursor-pointer"
                                 type="checkbox"
                                 id={`lab_${t.id}`}
                                 checked={checked}
@@ -562,7 +550,7 @@ function DoctorConsultation() {
                                 onChange={() => handleLabToggle(t.id)}
                               />
                               <label
-                                className="form-check-label w-100 cursor-pointer"
+                                className="form-check-label w-100 cursor-pointer ms-1"
                                 htmlFor={`lab_${t.id}`}
                               >
                                 <div className="d-flex justify-content-between align-items-center">
@@ -575,7 +563,7 @@ function DoctorConsultation() {
                                   className="text-secondary small mt-1"
                                   style={{ fontSize: "0.8rem" }}
                                 >
-                                  Normal range: {t.normal_values || "Standard"}
+                                  Norm: {t.normal_values || "Standard"}
                                 </div>
                               </label>
                             </div>
@@ -588,9 +576,9 @@ function DoctorConsultation() {
               </div>
             </div>
 
-            {/* Consultation Action Buttons */}
+            {/* Action Buttons */}
             {!isCompleted && (
-              <div className="d-flex flex-wrap justify-content-end gap-3 py-3 border-top">
+              <div className="d-flex flex-wrap justify-content-end gap-2 py-2 mb-4">
                 <button
                   type="button"
                   className="btn btn-outline-secondary"
@@ -601,7 +589,7 @@ function DoctorConsultation() {
                 </button>
                 <button
                   type="button"
-                  className="btn btn-success px-4"
+                  className="btn btn-primary px-4"
                   onClick={handleComplete}
                   disabled={saving}
                 >
@@ -611,22 +599,20 @@ function DoctorConsultation() {
             )}
           </div>
 
-          {/* Right Column: Sidebar (Recent Consultations & Recent Lab Results) */}
+          {/* Right Column: Sidebar */}
           <div className="col-lg-4">
-            {/* Recent Lab Results Sidebar Box */}
-            <div className="card shadow-sm border-0 mb-4">
-              <div className="card-header bg-white py-3">
-                <h4 className="h6 mb-0 fw-bold text-dark">Recent Lab Results</h4>
-              </div>
-              <div className="card-body p-3">
+            {/* Recent Lab Results */}
+            <div className="card mb-4">
+              <div className="card-body">
+                <h2 className="h5 mb-3">Recent lab results</h2>
                 {consultation.recent_lab_results?.length === 0 ? (
-                  <div className="text-secondary small text-center py-3">
+                  <div className="empty py-3">
                     No laboratory records for this patient.
                   </div>
                 ) : (
-                  <div className="list-group list-group-flush">
+                  <div>
                     {consultation.recent_lab_results?.map((res, i) => (
-                      <div key={i} className="list-group-item px-0 py-2 border-bottom">
+                      <div key={i} className="doctor-ref-item">
                         <div className="d-flex justify-content-between align-items-center mb-1">
                           <strong className="small text-dark">{res.test_name}</strong>
                           <span className="text-secondary" style={{ fontSize: "0.75rem" }}>
@@ -635,7 +621,7 @@ function DoctorConsultation() {
                         </div>
                         {res.result ? (
                           <div className="small text-primary fw-semibold">
-                            Result: {res.result}{" "}
+                            {res.result}{" "}
                             {res.reference_range && (
                               <span className="text-secondary fw-normal">
                                 ({res.reference_range})
@@ -644,7 +630,7 @@ function DoctorConsultation() {
                           </div>
                         ) : (
                           <div className="small text-warning">
-                            <span className="badge text-bg-warning text-dark">
+                            <span className="badge text-bg-warning text-dark me-1">
                               {res.status || "Pending"}
                             </span>{" "}
                             No result yet
@@ -652,7 +638,7 @@ function DoctorConsultation() {
                         )}
                         {res.remarks && (
                           <div className="small text-muted mt-1" style={{ fontSize: "0.75rem" }}>
-                            Notes: {res.remarks}
+                            {res.remarks}
                           </div>
                         )}
                       </div>
@@ -662,20 +648,18 @@ function DoctorConsultation() {
               </div>
             </div>
 
-            {/* Recent Consultations Sidebar Box */}
-            <div className="card shadow-sm border-0 mb-4">
-              <div className="card-header bg-white py-3">
-                <h4 className="h6 mb-0 fw-bold text-dark">Recent Consultations</h4>
-              </div>
-              <div className="card-body p-3">
+            {/* Recent Consultations */}
+            <div className="card mb-4">
+              <div className="card-body">
+                <h2 className="h5 mb-3">Recent consultations</h2>
                 {consultation.recent_consultations?.length === 0 ? (
-                  <div className="text-secondary small text-center py-3">
+                  <div className="empty py-3">
                     First consultation at clinic.
                   </div>
                 ) : (
-                  <div className="list-group list-group-flush">
+                  <div>
                     {consultation.recent_consultations?.map((past, i) => (
-                      <div key={i} className="list-group-item px-0 py-2 border-bottom">
+                      <div key={i} className="doctor-ref-item">
                         <div className="d-flex justify-content-between align-items-center">
                           <strong
                             className="small text-dark text-truncate"
@@ -712,12 +696,12 @@ function DoctorConsultation() {
           <div
             className="modal fade show d-block"
             tabIndex="-1"
-            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            style={{ backgroundColor: "rgba(23, 52, 59, 0.4)" }}
           >
             <div className="modal-dialog modal-dialog-centered">
               <div className="modal-content">
                 <div className="modal-header">
-                  <h5 className="modal-title">Prescribe Medicine</h5>
+                  <h5 className="modal-title">Prescribe medicine</h5>
                   <button
                     type="button"
                     className="btn-close"
@@ -732,8 +716,8 @@ function DoctorConsultation() {
                       </div>
                     )}
                     <div className="mb-3">
-                      <label className="form-label small fw-semibold">
-                        Search / Select Medicine
+                      <label className="form-label">
+                        Select medicine <span className="text-danger">*</span>
                       </label>
                       <input
                         type="text"
@@ -750,14 +734,16 @@ function DoctorConsultation() {
                       >
                         {filteredMeds.map((m) => (
                           <option key={m.id} value={m.id}>
-                            {m.name} — In Stock: {m.stock_quantity} (₹{m.price})
+                            {m.name} — In Stock: {m.stock_quantity} ({formatMoney(m.price)})
                           </option>
                         ))}
                       </select>
                     </div>
 
                     <div className="mb-3">
-                      <label className="form-label small fw-semibold">Quantity</label>
+                      <label className="form-label">
+                        Quantity <span className="text-danger">*</span>
+                      </label>
                       <input
                         type="number"
                         className="form-control form-control-sm"
@@ -768,13 +754,13 @@ function DoctorConsultation() {
                     </div>
 
                     <div className="mb-3">
-                      <label className="form-label small fw-semibold">
-                        Instructions / Dosage
+                      <label className="form-label">
+                        Instructions / dosage
                       </label>
                       <input
                         type="text"
                         className="form-control form-control-sm"
-                        placeholder="e.g. 1 tab thrice daily after meals for 5 days"
+                        placeholder="e.g. 1 tab twice daily after food for 5 days"
                         value={medInstructions}
                         onChange={(e) => setMedInstructions(e.target.value)}
                       />
@@ -783,13 +769,13 @@ function DoctorConsultation() {
                   <div className="modal-footer">
                     <button
                       type="button"
-                      className="btn btn-secondary btn-sm"
+                      className="btn btn-outline-secondary btn-sm"
                       onClick={() => setShowMedModal(false)}
                     >
                       Cancel
                     </button>
                     <button type="submit" className="btn btn-primary btn-sm">
-                      Add to Prescription
+                      Add to prescription
                     </button>
                   </div>
                 </form>
@@ -870,7 +856,7 @@ function DoctorConsultation() {
               <div className="sign-line">
                 Dr. {doc?.name || "Doctor"}
                 <br />
-                <span style={{ fontSize: "0.8rem", color: "#64748b" }}>
+                <span style={{ fontSize: "0.8rem", color: "#6c7c80" }}>
                   Authorized Signature
                 </span>
               </div>

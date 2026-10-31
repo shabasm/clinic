@@ -62,30 +62,27 @@ function DoctorPastConsultations() {
   return (
     <>
       <DoctorNavbar />
-      <main className="container-xl admin-main pb-5">
-        <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
-          <div>
-            <h1 className="h3 mb-1">Past Consultations</h1>
-            <p className="text-secondary mb-0">
-              Review completed patient consultations, prescribed medications, and laboratory diagnostic findings.
-            </p>
-          </div>
+      <main className="container admin-main">
+        <header className="page-header mb-4">
+          <h1 className="mb-1">Past consultations</h1>
+          <p className="mb-0">
+            Review completed patient consultations, prescribed medications, and laboratory diagnostic findings.
+          </p>
         </header>
 
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show" role="alert">
+          <div className="alert alert-danger" role="alert">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError("")}></button>
           </div>
         )}
 
-        {/* Filters */}
-        <div className="card shadow-sm border-0 mb-4">
+        {/* Filters Card */}
+        <div className="card mb-4">
           <div className="card-body">
             <div className="row g-3 align-items-end">
               <div className="col-md-5">
-                <label className="form-label small fw-semibold text-secondary">
-                  Search Patient or Diagnosis
+                <label className="form-label">
+                  Search patient or diagnosis
                 </label>
                 <input
                   type="text"
@@ -96,8 +93,8 @@ function DoctorPastConsultations() {
                 />
               </div>
               <div className="col-md-4">
-                <label className="form-label small fw-semibold text-secondary">
-                  Consultation Date
+                <label className="form-label">
+                  Consultation date
                 </label>
                 <input
                   type="date"
@@ -112,7 +109,7 @@ function DoctorPastConsultations() {
                   className="btn btn-outline-secondary btn-sm flex-grow-1"
                   onClick={handleResetFilters}
                 >
-                  Reset Filters
+                  Reset filters
                 </button>
               </div>
             </div>
@@ -120,10 +117,10 @@ function DoctorPastConsultations() {
         </div>
 
         {/* Consultations Table */}
-        <div className="card shadow-sm border-0">
+        <div className="card mb-4">
           <div className="table-responsive">
             <table className="table table-hover align-middle mb-0">
-              <thead className="table-light">
+              <thead>
                 <tr>
                   <th style={{ width: "130px" }}>Date</th>
                   <th style={{ width: "90px" }}>Token</th>
@@ -144,7 +141,7 @@ function DoctorPastConsultations() {
                   </tr>
                 ) : consultations.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="text-center py-4 text-secondary">
+                    <td colSpan="8" className="empty">
                       No consultations found matching criteria.
                     </td>
                   </tr>
@@ -160,7 +157,7 @@ function DoctorPastConsultations() {
                       <td>
                         <div className="fw-semibold text-dark">{c.patient_name}</div>
                         <div className="small text-secondary">
-                          {c.patient_gender || "—"} · {c.patient_age ? `${c.patient_age} yrs` : "—"} · {c.patient_phone || "—"}
+                          {c.patient_gender || "—"} &bull; {c.patient_age ? `${c.patient_age} yrs` : "—"} &bull; {c.patient_phone || "—"}
                         </div>
                       </td>
                       <td>
@@ -230,13 +227,13 @@ function DoctorPastConsultations() {
           <div
             className="modal fade show d-block"
             tabIndex="-1"
-            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            style={{ backgroundColor: "rgba(23, 52, 59, 0.4)" }}
           >
             <div className="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
               <div className="modal-content">
                 <div className="modal-header">
                   <h5 className="modal-title">
-                    Consultation Details &mdash;{" "}
+                    Consultation details &mdash;{" "}
                     {selectedConsultation && formatId("CNS", selectedConsultation.id)}
                   </h5>
                   <button
@@ -250,7 +247,7 @@ function DoctorPastConsultations() {
                 </div>
                 <div className="modal-body">
                   {modalLoading && (
-                    <div className="text-center py-4 text-secondary">
+                    <div className="text-center py-4 text-muted">
                       Loading consultation records...
                     </div>
                   )}
@@ -263,32 +260,34 @@ function DoctorPastConsultations() {
 
                   {selectedConsultation && (
                     <div>
-                      {/* Patient Summary */}
-                      <div className="bg-light p-3 rounded mb-3">
-                        <div className="d-flex justify-content-between align-items-start">
-                          <div>
-                            <h6 className="fw-bold mb-1">
-                              {selectedConsultation.patient?.full_name}
-                            </h6>
-                            <div className="small text-secondary">
-                              {formatId("PAT", selectedConsultation.patient?.id)} ·{" "}
-                              {selectedConsultation.patient?.gender} ·{" "}
-                              {selectedConsultation.patient?.age
-                                ? `${selectedConsultation.patient.age} yrs`
-                                : "—"}{" "}
-                              · Phone: {selectedConsultation.patient?.phone || "—"}
+                      {/* Patient Summary Card */}
+                      <div className="card mb-3 bg-light border">
+                        <div className="card-body p-3">
+                          <div className="d-flex justify-content-between align-items-start">
+                            <div>
+                              <h6 className="fw-bold mb-1 text-dark">
+                                {selectedConsultation.patient?.full_name}
+                              </h6>
+                              <div className="small text-secondary">
+                                {formatId("PAT", selectedConsultation.patient?.id)} &bull;{" "}
+                                {selectedConsultation.patient?.gender} &bull;{" "}
+                                {selectedConsultation.patient?.age
+                                  ? `${selectedConsultation.patient.age} yrs`
+                                  : "—"}{" "}
+                                &bull; Phone: {selectedConsultation.patient?.phone || "—"}
+                              </div>
                             </div>
+                            <span className="badge text-bg-primary fs-6">
+                              Token #{selectedConsultation.token?.token_number}
+                            </span>
                           </div>
-                          <span className="badge text-bg-primary fs-6">
-                            Token #{selectedConsultation.token?.token_number}
-                          </span>
                         </div>
                       </div>
 
                       {/* Clinical Examination */}
                       <div className="mb-4">
                         <h6 className="fw-bold text-dark border-bottom pb-2">
-                          Clinical Findings & Diagnosis
+                          Clinical findings & diagnosis
                         </h6>
                         <div className="mb-2">
                           <strong>Diagnosis:</strong>{" "}
@@ -297,7 +296,7 @@ function DoctorPastConsultations() {
                           </span>
                         </div>
                         <div>
-                          <strong>Clinical Notes & Advice:</strong>
+                          <strong>Clinical notes & advice:</strong>
                           <p className="text-secondary small mb-0 mt-1" style={{ whiteSpace: "pre-wrap" }}>
                             {selectedConsultation.clinical_notes || "No clinical notes."}
                           </p>
@@ -307,14 +306,14 @@ function DoctorPastConsultations() {
                       {/* Prescriptions */}
                       <div className="mb-4">
                         <h6 className="fw-bold text-dark border-bottom pb-2">
-                          Prescribed Medications
+                          Prescribed medications
                         </h6>
                         {selectedConsultation.prescription_items?.length === 0 ? (
                           <div className="text-secondary small">No medications prescribed.</div>
                         ) : (
                           <div className="table-responsive">
                             <table className="table table-sm table-bordered align-middle">
-                              <thead className="table-light">
+                              <thead>
                                 <tr>
                                   <th>Medicine</th>
                                   <th>Instructions</th>
@@ -342,7 +341,7 @@ function DoctorPastConsultations() {
                       {/* Associated Laboratory Results */}
                       <div>
                         <h6 className="fw-bold text-dark border-bottom pb-2">
-                          Associated Laboratory Results
+                          Associated laboratory results
                         </h6>
                         {selectedConsultation.recent_lab_results?.length === 0 ? (
                           <div className="text-secondary small">
@@ -351,7 +350,7 @@ function DoctorPastConsultations() {
                         ) : (
                           <div className="table-responsive">
                             <table className="table table-sm table-hover align-middle">
-                              <thead className="table-light">
+                              <thead>
                                 <tr>
                                   <th>Test Name</th>
                                   <th>Date</th>
@@ -405,7 +404,7 @@ function DoctorPastConsultations() {
                 <div className="modal-footer">
                   <button
                     type="button"
-                    className="btn btn-secondary btn-sm"
+                    className="btn btn-outline-secondary btn-sm"
                     onClick={() => {
                       setSelectedConsultation(null);
                       setModalError("");

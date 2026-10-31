@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
+import "./Doctor.css";
 import DoctorConsultation from "./pages/DoctorConsultation";
 import DoctorPastConsultations from "./pages/DoctorPastConsultations";
 import DoctorPatientHistory from "./pages/DoctorPatientHistory";

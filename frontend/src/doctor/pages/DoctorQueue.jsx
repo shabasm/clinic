@@ -66,11 +66,11 @@ function DoctorQueue() {
   return (
     <>
       <DoctorNavbar />
-      <main className="container-xl admin-main pb-5">
+      <main className="container admin-main">
         <header className="page-header d-flex flex-wrap justify-content-between align-items-end gap-3 mb-4">
           <div>
-            <h1 className="h3 mb-1">Patient Queue</h1>
-            <p className="text-secondary mb-0">
+            <h1 className="mb-1">Patient queue</h1>
+            <p className="mb-0">
               Manage patient consultations and daily appointments.
             </p>
           </div>
@@ -94,53 +94,52 @@ function DoctorQueue() {
         </header>
 
         {error && (
-          <div className="alert alert-danger alert-dismissible fade show" role="alert">
+          <div className="alert alert-danger" role="alert">
             {error}
-            <button type="button" className="btn-close" onClick={() => setError("")}></button>
           </div>
         )}
 
         {/* Stats Row */}
         <div className="row g-3 mb-4">
-          <div className="col-sm-6 col-lg-3">
-            <div className="card shadow-sm border-0 border-start border-primary border-4">
+          <div className="col-6 col-lg-3">
+            <div className="card stat-card h-100">
               <div className="card-body">
-                <div className="text-secondary small fw-semibold">Total in Queue</div>
-                <div className="h3 mb-0 text-primary">{totalTokens}</div>
+                <div className="small text-secondary">Total in Queue</div>
+                <div className="stat-num">{totalTokens}</div>
               </div>
             </div>
           </div>
-          <div className="col-sm-6 col-lg-3">
-            <div className="card shadow-sm border-0 border-start border-warning border-4">
+          <div className="col-6 col-lg-3">
+            <div className="card stat-card h-100">
               <div className="card-body">
-                <div className="text-secondary small fw-semibold">Waiting</div>
-                <div className="h3 mb-0 text-warning">{waitingCount}</div>
+                <div className="small text-secondary">Waiting</div>
+                <div className="stat-num">{waitingCount}</div>
               </div>
             </div>
           </div>
-          <div className="col-sm-6 col-lg-3">
-            <div className="card shadow-sm border-0 border-start border-info border-4">
+          <div className="col-6 col-lg-3">
+            <div className="card stat-card h-100">
               <div className="card-body">
-                <div className="text-secondary small fw-semibold">In Progress</div>
-                <div className="h3 mb-0 text-info">{inProgressCount}</div>
+                <div className="small text-secondary">In Progress</div>
+                <div className="stat-num">{inProgressCount}</div>
               </div>
             </div>
           </div>
-          <div className="col-sm-6 col-lg-3">
-            <div className="card shadow-sm border-0 border-start border-success border-4">
+          <div className="col-6 col-lg-3">
+            <div className="card stat-card h-100">
               <div className="card-body">
-                <div className="text-secondary small fw-semibold">Completed</div>
-                <div className="h3 mb-0 text-success">{completedCount}</div>
+                <div className="small text-secondary">Completed</div>
+                <div className="stat-num">{completedCount}</div>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Search and Table Card */}
-        <div className="card shadow-sm border-0">
-          <div className="card-header bg-white py-3">
-            <div className="row align-items-center g-2">
-              <div className="col-md-4">
+        {/* Table Card */}
+        <div className="card mb-4">
+          <div className="card-body pb-0">
+            <div className="row align-items-center g-2 mb-3">
+              <div className="col-md-5">
                 <input
                   type="text"
                   className="form-control form-control-sm"
@@ -149,7 +148,7 @@ function DoctorQueue() {
                   onChange={(e) => setSearchTerm(e.target.value)}
                 />
               </div>
-              <div className="col-md-8 text-md-end text-secondary small">
+              <div className="col-md-7 text-md-end text-secondary small">
                 Showing {filteredQueue.length} patient(s)
               </div>
             </div>
@@ -157,7 +156,7 @@ function DoctorQueue() {
 
           <div className="table-responsive">
             <table className="table table-hover align-middle mb-0">
-              <thead className="table-light">
+              <thead>
                 <tr>
                   <th style={{ width: "90px" }}>Token</th>
                   <th>Patient Details</th>
@@ -175,7 +174,7 @@ function DoctorQueue() {
                   </tr>
                 ) : filteredQueue.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="text-center py-4 text-secondary">
+                    <td colSpan="5" className="empty">
                       No patients in queue for {selectedDate}.
                     </td>
                   </tr>
@@ -199,7 +198,7 @@ function DoctorQueue() {
                             {pat?.full_name || "Unknown"}
                           </div>
                           <div className="small text-secondary">
-                            {pat?.gender || "—"} · {pat?.age ? `${pat.age} yrs` : "—"} · {pat?.phone || "—"}
+                            {pat?.gender || "—"} &bull; {pat?.age ? `${pat.age} yrs` : "—"} &bull; {pat?.phone || "—"}
                           </div>
                           <div className="small text-muted" style={{ fontSize: "0.75rem" }}>
                             {formatId("PAT", pat?.id)}
@@ -235,7 +234,7 @@ function DoctorQueue() {
                             {canStart && (
                               <button
                                 type="button"
-                                className="btn btn-sm btn-success"
+                                className="btn btn-sm btn-primary"
                                 onClick={() => handleStart(item.id)}
                                 disabled={actionLoading}
                               >
@@ -255,7 +254,7 @@ function DoctorQueue() {
                             {pat && (
                               <Link
                                 to={`/doctor/patient-history?patient=${pat.id}`}
-                                className="btn btn-sm btn-outline-info"
+                                className="btn btn-sm btn-outline-secondary"
                                 title="View Patient Medical History"
                               >
                                 History
