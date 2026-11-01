@@ -78,3 +78,85 @@
 .pharmacy-instruction-slip {
   display: none;
 }
+
+/* Monthly Sales Bar Chart */
+.pharmacy-sales-chart-wrapper {
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+}
+
+.pharmacy-sales-chart {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  height: 200px;
+  min-width: 440px;
+  border-bottom: 2px solid var(--line, #e2e8f0);
+  padding: 0 1rem 0.5rem;
+  gap: 1rem;
+}
+
+.pharmacy-chart-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+}
+
+.pharmacy-chart-value {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.pharmacy-chart-bar-track {
+  width: 100%;
+  max-width: 48px;
+  height: 140px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.pharmacy-chart-bar {
+  width: 100%;
+  background: var(--teal, #0f8b8d);
+  opacity: 0.7;
+  border-radius: 4px 4px 0 0;
+  transition: height 0.3s ease, opacity 0.2s ease;
+}
+
+.pharmacy-chart-bar:hover {
+  opacity: 1;
+}
+
+.pharmacy-chart-bar.current-month {
+  background: var(--teal, #0f8b8d);
+  opacity: 1;
+  box-shadow: 0 2px 8px rgba(15, 139, 141, 0.35);
+}
+
+.pharmacy-chart-label {
+  margin-top: 0.5rem;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.text-teal {
+  color: var(--teal, #0f8b8d) !important;
+}
+
+/* Interactive card utilities */
+.cursor-pointer {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cursor-pointer:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}

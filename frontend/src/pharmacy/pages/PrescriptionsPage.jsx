@@ -5,20 +5,50 @@ import PharmacyNavbar from "../components/PharmacyNavbar";
 import { badgeColor, getDashboard, getPrescriptions } from "../services/pharmacyApi";
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function PrescriptionsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [prescriptions, setPrescriptions] = useState([]);
   const [search, setSearch] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
   const [billsToday, setBillsToday] = useState(null);
   const statusFilter = searchParams.get("status") || "";
+  const dateParam = searchParams.get("date");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const today = todayStr();
+
+  // If date=all is given, or if filtering for Pending/Partially Dispensed without an explicit date,
+  // show all dates so pending prescriptions from previous days are fully visible.
+  // Otherwise default to todayStr() for fresh visits.
+  const [dateFilter, setDateFilter] = useState(() => {
+    if (dateParam === "all") return "";
+    if (dateParam === "today") return today;
+    if (dateParam) return dateParam;
+    if (statusFilter === "Pending" || statusFilter === "Partially Dispensed") return "";
+    return today;
+  });
+
+  // Sync dateFilter when searchParams change (e.g. clicking widgets/links)
+  useEffect(() => {
+    const d = searchParams.get("date");
+    const s = searchParams.get("status");
+    if (d === "all") {
+      setDateFilter("");
+    } else if (d === "today") {
+      setDateFilter(todayStr());
+    } else if (d) {
+      setDateFilter(d);
+    } else if (s === "Pending" || s === "Partially Dispensed") {
+      setDateFilter("");
+    }
+  }, [searchParams]);
 
   const loadPrescriptions = (searchTerm, statusTerm) => {
     const params = {};
@@ -72,6 +102,12 @@ function PrescriptionsPage() {
   const handleStatusChange = (val) => {
     const newParams = {};
     if (val) newParams.status = val;
+    if (val === "Pending" || val === "Partially Dispensed") {
+      newParams.date = "all";
+      setDateFilter("");
+    } else if (dateFilter) {
+      newParams.date = dateFilter;
+    }
     setSearchParams(newParams);
   };
 
@@ -84,7 +120,8 @@ function PrescriptionsPage() {
 
   // Apply search + date filter for table display
   const filtered = prescriptions.filter((p) => {
-    if (dateFilter && (p.date || "") !== dateFilter) return false;
+    const rxDate = (p.date || "").slice(0, 10);
+    if (dateFilter && rxDate !== dateFilter) return false;
     if (!search) return true;
     const text =
       `${formatId("RX", p.id)} ${p.patient_name || ""} ${p.doctor_name || ""}`.toLowerCase();
@@ -113,10 +150,16 @@ function PrescriptionsPage() {
           <div className="row g-3 mb-4">
             <div className="col-6 col-md-3">
               <Link
-                to="/pharmacy/prescriptions?status=Pending"
+                to="/pharmacy/prescriptions?status=Pending&date=all"
+                onClick={() => setDateFilter("")}
                 className="text-decoration-none"
               >
-                <div className="card stat-card h-100">
+                <div
+                  className={`card stat-card h-100 cursor-pointer ${
+                    statusFilter === "Pending" && !dateFilter ? "border-primary" : ""
+                  }`}
+                  title="Click to view all pending prescriptions"
+                >
                   <div className="card-body">
                     <div className="small text-secondary">Pending</div>
                     <div className="stat-num">{statPending}</div>
@@ -126,10 +169,16 @@ function PrescriptionsPage() {
             </div>
             <div className="col-6 col-md-3">
               <Link
-                to="/pharmacy/prescriptions?status=Partially%20Dispensed"
+                to="/pharmacy/prescriptions?status=Partially%20Dispensed&date=all"
+                onClick={() => setDateFilter("")}
                 className="text-decoration-none"
               >
-                <div className="card stat-card h-100">
+                <div
+                  className={`card stat-card h-100 cursor-pointer ${
+                    statusFilter === "Partially Dispensed" && !dateFilter ? "border-primary" : ""
+                  }`}
+                  title="Click to view all partially dispensed prescriptions"
+                >
                   <div className="card-body">
                     <div className="small text-secondary">Partially Dispensed</div>
                     <div className="stat-num">{statPartial}</div>
@@ -139,10 +188,16 @@ function PrescriptionsPage() {
             </div>
             <div className="col-6 col-md-3">
               <Link
-                to="/pharmacy/prescriptions?status=Dispensed"
+                to="/pharmacy/prescriptions?status=Dispensed&date=today"
+                onClick={() => setDateFilter(today)}
                 className="text-decoration-none"
               >
-                <div className="card stat-card h-100">
+                <div
+                  className={`card stat-card h-100 cursor-pointer ${
+                    statusFilter === "Dispensed" && dateFilter === today ? "border-primary" : ""
+                  }`}
+                  title="Click to view prescriptions dispensed today"
+                >
                   <div className="card-body">
                     <div className="small text-secondary">Dispensed Today</div>
                     <div className="stat-num">{statDispensedToday}</div>
@@ -151,8 +206,8 @@ function PrescriptionsPage() {
               </Link>
             </div>
             <div className="col-6 col-md-3">
-              <Link to="/pharmacy/bills" className="text-decoration-none">
-                <div className="card stat-card h-100">
+              <Link to="/pharmacy/bills?date=today" className="text-decoration-none">
+                <div className="card stat-card h-100 cursor-pointer">
                   <div className="card-body">
                     <div className="small text-secondary">Bills Today</div>
                     <div className="stat-num">{billsToday ?? "—"}</div>
@@ -196,6 +251,15 @@ function PrescriptionsPage() {
             onChange={(e) => setDateFilter(e.target.value)}
             title="Filter prescriptions by date"
           />
+          {dateFilter !== today && (
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              onClick={() => setDateFilter(today)}
+            >
+              Today
+            </button>
+          )}
           {dateFilter && (
             <button
               className="btn btn-outline-secondary"
