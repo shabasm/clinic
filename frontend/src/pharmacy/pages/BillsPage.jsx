@@ -10,7 +10,11 @@ import PharmacyNavbar from "../components/PharmacyNavbar";
 import { badgeColor, getBills } from "../services/pharmacyApi";
 
 function todayStr() {
-  return new Date().toISOString().slice(0, 10);
+  const d = new Date();
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function BillsPage() {
@@ -18,9 +22,31 @@ function BillsPage() {
   const [bills, setBills] = useState([]);
   const [search, setSearch] = useState("");
   const statusFilter = searchParams.get("payment_status") || "";
-  const [dateFilter, setDateFilter] = useState("");
+  const dateParam = searchParams.get("date");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const today = todayStr();
+
+  // If date=all is passed, show all bills. Otherwise default to today's bills.
+  const [dateFilter, setDateFilter] = useState(() => {
+    if (dateParam === "all") return "";
+    if (dateParam === "today") return today;
+    if (dateParam) return dateParam;
+    return today;
+  });
+
+  // Sync dateFilter when query params change
+  useEffect(() => {
+    const d = searchParams.get("date");
+    if (d === "all") {
+      setDateFilter("");
+    } else if (d === "today") {
+      setDateFilter(todayStr());
+    } else if (d) {
+      setDateFilter(d);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     let isMounted = true;
@@ -46,10 +72,9 @@ function BillsPage() {
   const handleStatusChange = (val) => {
     const newParams = {};
     if (val) newParams.payment_status = val;
+    if (dateFilter) newParams.date = dateFilter;
     setSearchParams(newParams);
   };
-
-  const today = todayStr();
 
   // Compute stats from the full bills array (before date/search filter)
   const billsToday = bills.filter((b) =>
@@ -96,11 +121,20 @@ function BillsPage() {
           </div>
         )}
 
-        {/* Stats row */}
+        {/* Stats row - clicking cards filters the table */}
         {!loading && (
           <div className="row g-3 mb-4">
             <div className="col-6 col-md-4">
-              <div className="card stat-card h-100">
+              <div
+                className={`card stat-card h-100 cursor-pointer ${
+                  dateFilter === today ? "border-primary" : ""
+                }`}
+                style={{ cursor: "pointer" }}
+                onClick={() => setDateFilter(today)}
+                role="button"
+                tabIndex={0}
+                title="Click to view today's bills"
+              >
                 <div className="card-body">
                   <div className="small text-secondary">Bills Today</div>
                   <div className="stat-num">{statBillsToday}</div>
@@ -116,7 +150,16 @@ function BillsPage() {
               </div>
             </div>
             <div className="col-6 col-md-4">
-              <div className="card stat-card h-100">
+              <div
+                className={`card stat-card h-100 cursor-pointer ${
+                  !dateFilter ? "border-primary" : ""
+                }`}
+                style={{ cursor: "pointer" }}
+                onClick={() => setDateFilter("")}
+                role="button"
+                tabIndex={0}
+                title="Click to view all bills across all dates"
+              >
                 <div className="card-body">
                   <div className="small text-secondary">All Bills</div>
                   <div className="stat-num">{statTotalBills}</div>
@@ -156,6 +199,15 @@ function BillsPage() {
             onChange={(e) => setDateFilter(e.target.value)}
             title="Filter bills by date"
           />
+          {dateFilter !== today && (
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              onClick={() => setDateFilter(today)}
+            >
+              Today
+            </button>
+          )}
           {dateFilter && (
             <button
               className="btn btn-outline-secondary"
