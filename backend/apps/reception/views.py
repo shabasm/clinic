@@ -49,11 +49,16 @@ class PatientViewSet(
         bill.paid_by = request.user
         bill.paid_at = timezone.now()
         bill.save(update_fields=["payment_status", "payment_method", "paid_by", "paid_at"])
-        issued = []
-        for booking in Booking.objects.select_for_update().filter(patient=patient, date=timezone.localdate(), status=Booking.Status.RESERVED):
-            token = issue_token(patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
-            issued.append(token.token_number)
-        return Response({"payment_status": bill.payment_status, "amount": str(bill.total), "payment_method": method, "token_numbers": issued})
+        return Response({
+            "payment_status": bill.payment_status,
+            "amount": str(bill.total),
+            "payment_method": bill.payment_method,
+            "registration_bill_id": bill.id,
+            "registration_fee": str(bill.registration_fee),
+            "registration_bill_created_at": bill.created_at,
+            "registration_paid_at": bill.paid_at,
+            "token_numbers": [],
+        })
 
     def perform_destroy(self, patient):
         # Keep appointments, bills, and consultations attached to the patient.
@@ -91,9 +96,8 @@ class BookingViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.Retr
         doctor = serializer.validated_data["doctor"]
         date = serializer.validated_data["date"]
         booking = serializer.save(reserved_token_number=None)
-        bill = RegistrationBill.objects.filter(patient=booking.patient).first()
-        if bill and bill.payment_status == bill.PaymentStatus.PAID and date == timezone.localdate():
-            issue_token(booking.patient, doctor, date, Token.Type.BOOKING, booking)
+        # Booking reserves a visit; the token is issued when the patient checks in,
+        # so walk-ins who arrive first keep their place in the queue.
 
     @transaction.atomic
     def perform_update(self, serializer):
@@ -104,9 +108,6 @@ class BookingViewSet(mixins.ListModelMixin, mixins.CreateModelMixin, mixins.Retr
             booking.tokens.filter(status=Token.Status.RESERVED).update(status=Token.Status.CANCELLED)
             booking.reserved_token_number = None
             booking.save(update_fields=["reserved_token_number"])
-            bill = RegistrationBill.objects.filter(patient=booking.patient, payment_status=RegistrationBill.PaymentStatus.PAID).exists()
-            if bill and booking.date == timezone.localdate():
-                issue_token(booking.patient, booking.doctor, booking.date, Token.Type.BOOKING, booking)
 
     @action(detail=True, methods=["post"])
     @transaction.atomic
@@ -174,7 +175,9 @@ class ReceptionDashboardView(APIView):
                 "id": bill.id,
                 "token_id": bill.token_id,
                 "token_number": bill.token.token_number,
+                "patient_id": bill.patient_id,
                 "patient_name": bill.patient.full_name,
+                "patient_phone": bill.patient.phone,
                 "doctor_name": bill.doctor.staff.full_name,
                 "amount": str(bill.total),
                 "completed_at": bill.token.consultation.completed_at,
@@ -236,11 +239,15 @@ class CollectConsultationPaymentView(APIView):
         bill.paid_at = timezone.now()
         bill.save(update_fields=["payment_status", "payment_method", "paid_by", "paid_at"])
         return Response({
+            "bill_id": bill.id,
             "token_id": token.id,
             "token_number": token.token_number,
             "payment_status": bill.payment_status,
             "status": token.status,
             "amount": str(bill.total),
+            "created_at": bill.created_at,
+            "paid_at": bill.paid_at,
+            "payment_method": bill.payment_method,
         })
 
 

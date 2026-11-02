@@ -14,7 +14,7 @@ import LabLayout from "./components/LabLayout";
 import LabOrders from "./pages/lab/LabOrders";
 import LabResults from "./pages/lab/LabResults";
 import LabBills from "./pages/lab/LabBills";
-import DoctorDashboard from "./doctor/DoctorDashboard";
+import DoctorRoutes from "./doctor/DoctorRoutes";
 import ReceptionDashboard from "./reception/ReceptionDashboard";
 
 const roleRoutes = {
@@ -63,7 +63,7 @@ function App() {
           <Route path="bills" element={<LabBills />} />
           <Route path="*" element={<Navigate to="/lab/orders" replace />} />
         </Route>
-        <Route path="/doctor/dashboard" element={<RequireRole roles={["Doctor"]}><DoctorDashboard /></RequireRole>} />
+        <Route path="/doctor/*" element={<RequireRole roles={["Doctor"]}><DoctorRoutes /></RequireRole>} />
         <Route path="/reception/dashboard" element={<RequireRole roles={["Receptionist"]}><ReceptionDashboard /></RequireRole>} />
         <Route path="*" element={<Navigate to={roleRoutes[localStorage.getItem("role")] || "/login"} replace />} />
       </Routes>

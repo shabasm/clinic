@@ -1,3 +1,5 @@
+from datetime import date
+
 from django.utils import timezone
 from django.db import transaction
 from rest_framework import serializers
@@ -19,7 +21,7 @@ class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = [
-            "id", "full_name", "date_of_birth", "gender", "phone", "email", "payment_method",
+            "id", "full_name", "date_of_birth", "gender", "phone", "payment_method",
             "address", "registration_fee", "registration_payment_status", "registration_bill_id", "registration_bill_created_at", "registration_payment_method", "registration_paid_at", "appointment_history", "consultation_history", "blood_group", "emergency_contact_name",
             "emergency_contact_phone", "registration_date", "is_active",
         ]
@@ -80,6 +82,8 @@ class PatientSerializer(serializers.ModelSerializer):
         return value
 
     def validate_date_of_birth(self, value):
+        if value < date(1900, 1, 1):
+            raise serializers.ValidationError("Enter a valid date of birth after January 1, 1900.")
         if value >= timezone.localdate():
             raise serializers.ValidationError("Date of birth must be in the past.")
         return value
