@@ -1,122 +1,74 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import AdminDashboard from "./admin/pages/AdminDashboard";
+import Charges from "./admin/pages/Charges";
+import Credentials from "./admin/pages/Credentials";
+import Departments from "./admin/pages/Departments";
+import Doctors from "./admin/pages/Doctors";
+import LabTests from "./admin/pages/LabTests";
+import Login from "./admin/pages/Login";
+import Medicines from "./admin/pages/Medicines";
+import Staff from "./admin/pages/Staff";
+import StockRequest from "./admin/pages/StockRequest";
+import PharmacyRoutes from "./pharmacy/PharmacyRoutes";
+import LabLayout from "./components/LabLayout";
+import LabOrders from "./pages/lab/LabOrders";
+import LabResults from "./pages/lab/LabResults";
+import LabBills from "./pages/lab/LabBills";
+import DoctorRoutes from "./doctor/DoctorRoutes";
+import ReceptionDashboard from "./reception/ReceptionDashboard";
 
-function App() {
-  const [count, setCount] = useState(0)
+const roleRoutes = {
+  Admin: "/admin/dashboard",
+  Doctor: "/doctor/dashboard",
+  Receptionist: "/reception/dashboard",
+  Pharmacist: "/pharmacy/dashboard",
+  "Lab Technician": "/lab/orders",
+};
 
-  return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+function RequireRole({ roles, children }) {
+  const access = localStorage.getItem("access");
+  const role = localStorage.getItem("role");
+  if (!access || !role) return <Navigate to="/login" replace />;
+  if (!roles.includes(role)) {
+    return <Navigate to={roleRoutes[role] || "/login"} replace />;
+  }
+  return children;
 }
 
-export default App
+function AdminRoute({ children }) {
+  return <RequireRole roles={["Admin"]}>{children}</RequireRole>;
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<Navigate to= "/login" replace />} />
+        <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+        <Route path="/admin/staff" element={<AdminRoute><Staff /></AdminRoute>} />
+        <Route path="/admin/credentials" element={<AdminRoute><Credentials /></AdminRoute>} />
+        <Route path="/admin/departments" element={<AdminRoute><Departments /></AdminRoute>} />
+        <Route path="/admin/doctors" element={<AdminRoute><Doctors /></AdminRoute>} />
+        <Route path="/admin/medicines" element={<AdminRoute><Medicines /></AdminRoute>} />
+        <Route path="/admin/labtests" element={<AdminRoute><LabTests /></AdminRoute>} />
+        <Route path="/admin/charges" element={<AdminRoute><Charges /></AdminRoute>} />
+        <Route path="/admin/stock-requests" element={<AdminRoute><StockRequest /></AdminRoute>} />
+        <Route path="/pharmacy/*" element={<RequireRole roles={["Pharmacist"]}><PharmacyRoutes /></RequireRole>} />
+        <Route path="/lab" element={<RequireRole roles={["Lab Technician"]}><LabLayout /></RequireRole>}>
+          <Route index element={<Navigate to="/lab/orders" replace />} />
+          <Route path="dashboard" element={<Navigate to="/lab/orders" replace />} />
+          <Route path="orders" element={<LabOrders />} />
+          <Route path="results" element={<LabResults />} />
+          <Route path="bills" element={<LabBills />} />
+          <Route path="*" element={<Navigate to="/lab/orders" replace />} />
+        </Route>
+        <Route path="/doctor/*" element={<RequireRole roles={["Doctor"]}><DoctorRoutes /></RequireRole>} />
+        <Route path="/reception/dashboard" element={<RequireRole roles={["Receptionist"]}><ReceptionDashboard /></RequireRole>} />
+        <Route path="*" element={<Navigate to={roleRoutes[localStorage.getItem("role")] || "/login"} replace />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}
+
+export default App;
