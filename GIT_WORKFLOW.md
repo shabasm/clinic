@@ -8,15 +8,15 @@ Read this once before you write any code. All commands are for **Windows PowerSh
 |---|---|---|---|
 | `main` | nobody (stable releases only) | | |
 | `develop` | shared (all finished work is merged here) | | |
-| `develop/admin` | Member 1 | `apps/admin_module` | `src/pages/admin/` |
-| `develop/reception` | Member 2 | `apps/reception` | `src/pages/reception/` |
-| `develop/doctor` | Member 3 | `apps/doctor` | `src/pages/doctor/` |
-| `develop/pharmacy` | Member 4 | `apps/pharmacy` | `src/pages/pharmacy/` |
-| `develop/lab` | Member 5 | `apps/lab` | `src/pages/lab/` |
+| `dev/admin` | Member 1 | `apps/admin_module` | `src/pages/admin/` |
+| `dev/reception` | Member 2 | `apps/reception` | `src/pages/reception/` |
+| `dev/doctor` | Member 3 | `apps/doctor` | `src/pages/doctor/` |
+| `dev/pharmacy` | Member 4 | `apps/pharmacy` | `src/pages/pharmacy/` |
+| `dev/lab` | Member 5 | `apps/lab` | `src/pages/lab/` |
 
 **Rules**
 
-1. Never push directly to `main` or `develop`. Always work on your own `develop/...` branch and merge through a pull request.
+1. Never push directly to `main` or `develop`. Always work on your own `dev/...` branch and merge through a pull request.
 2. Work only inside your own app and `pages/` folder. If you need something changed elsewhere, ask the owner.
 3. **Only Member 1 changes `apps/admin_module/models.py` and creates migration files.** If you need a new field or model, tell Member 1. Two people creating migrations at the same time is the most common cause of broken Django projects.
 4. Shared frontend code (`src/services/`, `src/components/`, `src/context/`) belongs to whoever builds it first. Before you add a new shared file, check that nobody else has already.
@@ -29,7 +29,7 @@ Read this once before you write any code. All commands are for **Windows PowerSh
 ```powershell
 git clone <repo-url>
 cd clinic
-git checkout develop/<your-module>
+git checkout dev/<your-module>
 ```
 
 **Backend**
@@ -59,7 +59,7 @@ If PowerShell blocks `Activate.ps1`, run `Set-ExecutionPolicy -Scope CurrentUser
 
 **Start of every day, before you write anything:**
 ```powershell
-git checkout develop/<your-module>
+git checkout dev/<your-module>
 git pull origin develop
 ```
 This brings your teammates' merged work into your branch. Then update your setup if needed:
@@ -79,7 +79,7 @@ Before you commit, read the `git status` list. If you see `venv`, `node_modules`
 
 **End of the day (or when a piece is done):**
 ```powershell
-git push -u origin develop/<your-module>
+git push -u origin dev/<your-module>
 ```
 The `-u` is only needed the first time. After that, `git push` is enough.
 
