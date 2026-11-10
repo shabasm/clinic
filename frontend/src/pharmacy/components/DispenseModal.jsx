@@ -88,6 +88,11 @@ function getItemDispenseInfo(item) {
   return { canDispense: true, reason: null, maxQty, price: unitPrice };
 }
 
+function parseQty(val) {
+  const num = parseInt(val, 10);
+  return isNaN(num) || num < 0 ? 0 : num;
+}
+
 function DispenseModal({ prescriptionId, onClose, onSuccess }) {
   const [prescription, setPrescription] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -103,14 +108,14 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
       .then((data) => {
         if (!isMounted) return;
         setPrescription(data);
-        // Default quantities to max dispensable quantity
+        // Default quantities to max dispensable quantity as strings
         const initial = {};
         (data.items || []).forEach((item) => {
           const info = getItemDispenseInfo(item);
           if (info.canDispense) {
-            initial[item.id] = info.maxQty;
+            initial[item.id] = String(info.maxQty);
           } else {
-            initial[item.id] = 0;
+            initial[item.id] = "0";
           }
         });
         setQuantities(initial);
@@ -133,33 +138,88 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
   const isProcessed =
     prescription?.status === "Dispensed" || prescription?.status === "Declined";
 
-  const handleQtyChange = (itemId, maxQty, rawVal) => {
-    let val = Number(rawVal);
-    if (isNaN(val) || val < 0) val = 0;
-    if (val > maxQty) val = maxQty;
-    val = Math.floor(val);
-    setQuantities((prev) => ({ ...prev, [itemId]: val }));
+  // CHANGE 2: Show "Dispensed" column only when it has history or prescription is processed
+  const hasDispensedHistory = prescription?.items?.some(
+    (item) => Number(item.dispensed_quantity) > 0
+  );
+  const showDispensedColumn = Boolean(isProcessed || hasDispensedHistory);
+
+  // Keep quantity as string while typing
+  const handleQtyChange = (itemId, rawVal) => {
+    setQuantities((prev) => ({ ...prev, [itemId]: rawVal }));
   };
 
-  // Calculate live totals
+  // Normalize on blur to clamped integer [0, maxQty]
+  const handleQtyBlur = (itemId, maxQty) => {
+    const raw = quantities[itemId];
+    let val = parseInt(raw, 10);
+    if (isNaN(val) || val < 0) val = 0;
+    if (val > maxQty) val = maxQty;
+    setQuantities((prev) => ({ ...prev, [itemId]: String(val) }));
+  };
+
+  // Stepper helper
+  const handleStep = (itemId, maxQty, delta) => {
+    const current = parseQty(quantities[itemId]);
+    const next = Math.max(0, Math.min(maxQty, current + delta));
+    setQuantities((prev) => ({ ...prev, [itemId]: String(next) }));
+  };
+
+  // Quick set helper (0 or Max)
+  const handleSetQuick = (itemId, val) => {
+    setQuantities((prev) => ({ ...prev, [itemId]: String(val) }));
+  };
+
+  // Table-level bulk buttons
+  const handleDispenseAllAvailable = () => {
+    if (!prescription?.items) return;
+    const updated = {};
+    prescription.items.forEach((item) => {
+      const info = getItemDispenseInfo(item);
+      updated[item.id] = info.canDispense ? String(info.maxQty) : "0";
+    });
+    setQuantities(updated);
+  };
+
+  const handleClearAll = () => {
+    if (!prescription?.items) return;
+    const updated = {};
+    prescription.items.forEach((item) => {
+      updated[item.id] = "0";
+    });
+    setQuantities(updated);
+  };
+
+  // Calculate live totals (empty treated as 0)
   let grandTotal = 0;
   let totalUnits = 0;
+  let pendingCount = 0;
   const itemsToDispense = [];
 
   if (prescription?.items) {
     for (const item of prescription.items) {
       const info = getItemDispenseInfo(item);
+      const remaining = Number(item.remaining_quantity) || 0;
       if (info.canDispense) {
-        const qty = Number(quantities[item.id]) || 0;
-        if (qty > 0) {
-          totalUnits += qty;
-          grandTotal += qty * info.price;
+        const raw = quantities[item.id];
+        const parsed = parseQty(raw);
+        const effectiveQty = Math.min(parsed, info.maxQty);
+        if (effectiveQty > 0) {
+          totalUnits += effectiveQty;
+          grandTotal += effectiveQty * info.price;
           itemsToDispense.push({
             item_id: item.id,
-            quantity: qty,
+            quantity: effectiveQty,
             name: item.medicine_name,
             unit_price: info.price,
           });
+        }
+        if (remaining > effectiveQty) {
+          pendingCount += 1;
+        }
+      } else {
+        if (remaining > 0) {
+          pendingCount += 1;
         }
       }
     }
@@ -171,6 +231,23 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
 
   const handleCollectPaymentClick = () => {
     setModalError("");
+    if (!prescription?.items) return;
+
+    // Normalize all quantities before confirming
+    const normalized = {};
+    prescription.items.forEach((item) => {
+      const info = getItemDispenseInfo(item);
+      if (info.canDispense) {
+        let val = parseInt(quantities[item.id], 10);
+        if (isNaN(val) || val < 0) val = 0;
+        if (val > info.maxQty) val = info.maxQty;
+        normalized[item.id] = String(val);
+      } else {
+        normalized[item.id] = "0";
+      }
+    });
+    setQuantities(normalized);
+
     if (totalUnits <= 0) {
       setModalError("Please specify at least 1 unit of medicine to dispense.");
       return;
@@ -295,6 +372,31 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                     </div>
                   </div>
 
+                  {/* Bulk buttons above medicines table */}
+                  {!isProcessed && (
+                    <div className="d-flex justify-content-between align-items-center mb-2">
+                      <span className="small text-secondary fw-semibold">
+                        Prescription Medicines
+                      </span>
+                      <div className="d-flex gap-2">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary"
+                          onClick={handleDispenseAllAvailable}
+                        >
+                          Dispense all available
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary"
+                          onClick={handleClearAll}
+                        >
+                          Clear all
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Medicines Table */}
                   <div className="table-responsive mb-3">
                     <table className="table align-middle table-hover mb-0">
@@ -302,11 +404,13 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                         <tr>
                           <th>Medicine &amp; Directions</th>
                           <th className="text-center">Prescribed</th>
-                          <th className="text-center">Dispensed</th>
+                          {showDispensedColumn && (
+                            <th className="text-center">Dispensed</th>
+                          )}
                           <th className="text-center">Remaining</th>
                           <th>Stock State</th>
                           <th className="text-end">Price</th>
-                          <th style={{ width: 140 }}>Dispense Qty</th>
+                          <th style={{ minWidth: 170 }}>Dispense Qty</th>
                           <th className="text-end">Line Total</th>
                         </tr>
                       </thead>
@@ -314,8 +418,14 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                         {prescription.items && prescription.items.length > 0 ? (
                           prescription.items.map((item) => {
                             const info = getItemDispenseInfo(item);
-                            const currentQty = Number(quantities[item.id]) || 0;
-                            const lineTotal = currentQty * info.price;
+                            const remaining = Number(item.remaining_quantity) || 0;
+                            const stock = Number(item.stock_quantity) || 0;
+                            const rawVal = quantities[item.id] ?? "";
+                            const parsedVal = parseInt(rawVal, 10);
+                            const currentNum = isNaN(parsedVal) || parsedVal < 0 ? 0 : parsedVal;
+                            const exceedsMax = !isNaN(parsedVal) && parsedVal > info.maxQty;
+                            const effectiveQty = Math.min(currentNum, info.maxQty);
+                            const lineTotal = effectiveQty * info.price;
 
                             return (
                               <tr key={item.id}>
@@ -334,11 +444,13 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                                     {item.prescribed_quantity}
                                   </span>
                                 </td>
-                                <td className="text-center">
-                                  <span className="badge text-bg-light border">
-                                    {item.dispensed_quantity}
-                                  </span>
-                                </td>
+                                {showDispensedColumn && (
+                                  <td className="text-center">
+                                    <span className="badge text-bg-light border">
+                                      {item.dispensed_quantity}
+                                    </span>
+                                  </td>
+                                )}
                                 <td className="text-center">
                                   <strong
                                     className={
@@ -377,26 +489,93 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                                     </span>
                                   ) : info.canDispense ? (
                                     <div>
-                                      <input
-                                        type="number"
-                                        className="form-control form-control-sm"
-                                        min="0"
-                                        max={info.maxQty}
-                                        step="1"
-                                        value={currentQty}
-                                        onChange={(e) =>
-                                          handleQtyChange(
-                                            item.id,
-                                            info.maxQty,
-                                            e.target.value
-                                          )
-                                        }
-                                      />
+                                      <div
+                                        className="input-group input-group-sm mb-1"
+                                        style={{ maxWidth: 150 }}
+                                      >
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary px-2"
+                                          onClick={() =>
+                                            handleStep(item.id, info.maxQty, -1)
+                                          }
+                                          disabled={currentNum <= 0}
+                                          title="Decrease quantity"
+                                        >
+                                          −
+                                        </button>
+                                        <input
+                                          type="number"
+                                          className={`form-control form-control-sm text-center ${
+                                            exceedsMax ? "border-danger text-danger" : ""
+                                          }`}
+                                          min="0"
+                                          max={info.maxQty}
+                                          step="1"
+                                          value={rawVal}
+                                          onChange={(e) =>
+                                            handleQtyChange(
+                                              item.id,
+                                              e.target.value
+                                            )
+                                          }
+                                          onBlur={() =>
+                                            handleQtyBlur(item.id, info.maxQty)
+                                          }
+                                        />
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary px-2"
+                                          onClick={() =>
+                                            handleStep(item.id, info.maxQty, 1)
+                                          }
+                                          disabled={currentNum >= info.maxQty}
+                                          title="Increase quantity"
+                                        >
+                                          +
+                                        </button>
+                                      </div>
+                                      <div className="d-flex align-items-center gap-1 mb-1">
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary py-0 px-2"
+                                          style={{ fontSize: "0.72rem" }}
+                                          onClick={() =>
+                                            handleSetQuick(item.id, 0)
+                                          }
+                                          disabled={
+                                            currentNum === 0 && rawVal === "0"
+                                          }
+                                        >
+                                          0
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-outline-secondary py-0 px-2"
+                                          style={{ fontSize: "0.72rem" }}
+                                          onClick={() =>
+                                            handleSetQuick(item.id, info.maxQty)
+                                          }
+                                          disabled={currentNum === info.maxQty}
+                                        >
+                                          Max
+                                        </button>
+                                      </div>
+                                      {exceedsMax && (
+                                        <div
+                                          className="text-danger fw-semibold"
+                                          style={{ fontSize: "0.75rem" }}
+                                        >
+                                          Only {info.maxQty} available
+                                        </div>
+                                      )}
                                       <div
                                         className="text-secondary"
                                         style={{ fontSize: "0.75rem" }}
                                       >
-                                        Max: {info.maxQty}
+                                        {remaining <= stock
+                                          ? `Max ${info.maxQty} (prescribed remaining)`
+                                          : `Max ${info.maxQty} (stock limit)`}
                                       </div>
                                     </div>
                                   ) : (
@@ -415,7 +594,10 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                           })
                         ) : (
                           <tr>
-                            <td colSpan="8" className="text-muted text-center p-3">
+                            <td
+                              colSpan={showDispensedColumn ? 8 : 7}
+                              className="text-muted text-center p-3"
+                            >
                               No medicines in this prescription.
                             </td>
                           </tr>
@@ -426,20 +608,31 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
 
                   {/* Live summary badge */}
                   {!isProcessed && (
-                    <div className="d-flex justify-content-between align-items-center p-3 bg-light rounded border">
-                      <div className="text-secondary">
-                        Items to dispense:{" "}
-                        <strong className="text-dark">
-                          {totalUnits} unit{totalUnits === 1 ? "" : "s"}
-                        </strong>{" "}
-                        ({itemsToDispense.length} medicine{itemsToDispense.length === 1 ? "" : "s"})
+                    <div className="p-3 bg-light rounded border">
+                      <div className="d-flex justify-content-between align-items-center">
+                        <div className="text-secondary">
+                          Items to dispense:{" "}
+                          <strong className="text-dark">
+                            {totalUnits} unit{totalUnits === 1 ? "" : "s"}
+                          </strong>{" "}
+                          ({itemsToDispense.length} medicine
+                          {itemsToDispense.length === 1 ? "" : "s"})
+                        </div>
+                        <div className="fs-5">
+                          <span className="text-secondary me-2">
+                            Grand Total:
+                          </span>
+                          <strong className="text-primary">
+                            {formatMoney(grandTotal)}
+                          </strong>
+                        </div>
                       </div>
-                      <div className="fs-5">
-                        <span className="text-secondary me-2">Grand Total:</span>
-                        <strong className="text-primary">
-                          {formatMoney(grandTotal)}
-                        </strong>
-                      </div>
+                      {pendingCount > 0 && (
+                        <div className="mt-2 text-warning-emphasis small pt-2 border-top">
+                          {pendingCount} medicine(s) will remain pending. The
+                          prescription will be marked Partially Dispensed.
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
@@ -496,17 +689,51 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
       {confirmDialog === "dispense" && (
         <ConfirmModal
           title="Confirm Payment & Dispense"
-          message={`Confirm that payment of ${formatMoney(
-            grandTotal
-          )} has been received from ${prescription.patient_name || "the patient"}.\n\n${
-            itemsToDispense.length
-          } line item(s), ${totalUnits} unit(s).\n\nThis will create the pharmacy bill and deduct stock.`}
           confirmText="Payment Received"
           confirmVariant="primary"
           loading={actionLoading}
           onConfirm={handleConfirmDispense}
-          onCancel={() => setConfirmDialog(null)}
-        />
+          onClose={() => setConfirmDialog(null)}
+        >
+          <p className="mb-2">
+            Confirm that payment of{" "}
+            <strong>{formatMoney(grandTotal)}</strong> has been received from{" "}
+            <strong>{prescription?.patient_name || "the patient"}</strong>.
+          </p>
+          <div className="card my-3 bg-light border">
+            <div className="card-header py-2 small fw-semibold text-secondary">
+              Billed Medicines ({itemsToDispense.length} line item
+              {itemsToDispense.length === 1 ? "" : "s"}, {totalUnits} unit
+              {totalUnits === 1 ? "" : "s"})
+            </div>
+            <ul className="list-group list-group-flush small">
+              {itemsToDispense.map((item) => (
+                <li
+                  key={item.item_id}
+                  className="list-group-item d-flex justify-content-between align-items-center py-2 bg-transparent"
+                >
+                  <span>
+                    <span className="fw-semibold">{item.name}</span> ×{" "}
+                    {item.quantity}
+                  </span>
+                  <span className="fw-semibold text-dark">
+                    = {formatMoney(item.quantity * item.unit_price)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <div className="card-footer py-2 d-flex justify-content-between align-items-center fw-bold">
+              <span>Grand Total</span>
+              <span className="text-primary fs-6">
+                {formatMoney(grandTotal)}
+              </span>
+            </div>
+          </div>
+          <p className="small text-muted mb-0">
+            This will create the paid pharmacy bill, record payment, and deduct
+            stock.
+          </p>
+        </ConfirmModal>
       )}
 
       {confirmDialog === "decline" && (
@@ -515,12 +742,14 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
           message={`Are you sure you want to mark Prescription ${formatId(
             "RX",
             prescription.id
-          )} for ${prescription.patient_name || "the patient"} as Declined?\n\nThis means the patient chose not to purchase these medicines now. No bill will be created and no stock will be deducted.`}
+          )} for ${
+            prescription.patient_name || "the patient"
+          } as Declined?\n\nThis means the patient chose not to purchase these medicines now. No bill will be created and no stock will be deducted.`}
           confirmText="Mark Declined"
           confirmVariant="danger"
           loading={actionLoading}
           onConfirm={handleConfirmDecline}
-          onCancel={() => setConfirmDialog(null)}
+          onClose={() => setConfirmDialog(null)}
         />
       )}
 
@@ -540,7 +769,8 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
             </div>
             <div>
               <strong>Patient: </strong>
-              {prescription?.patient_name} ({formatId("PAT", prescription?.patient)})
+              {prescription?.patient_name} (
+              {formatId("PAT", prescription?.patient)})
             </div>
             <div>
               <strong>Doctor: </strong>
@@ -568,7 +798,8 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
             </tbody>
           </table>
           <div className="footer">
-            Take medicines strictly as prescribed by your physician. Contact the clinic in case of any adverse reaction.
+            Take medicines strictly as prescribed by your physician. Contact the
+            clinic in case of any adverse reaction.
           </div>
         </div>
       </div>

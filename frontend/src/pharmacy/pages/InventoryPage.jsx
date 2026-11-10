@@ -177,7 +177,7 @@ function InventoryPage() {
                         </span>
                       </td>
                       <td className="text-end text-nowrap">
-                        {m.stock_state !== "In stock" ? (
+                        {m.is_active ? (
                           <button
                             type="button"
                             className="btn btn-sm btn-outline-primary"
@@ -190,7 +190,21 @@ function InventoryPage() {
                             Request stock
                           </button>
                         ) : (
-                          "—"
+                          <span
+                            className="d-inline-block"
+                            tabIndex="0"
+                            title="Inactive medicine"
+                          >
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              disabled
+                              title="Inactive medicine"
+                              style={{ pointerEvents: "none" }}
+                            >
+                              Request stock
+                            </button>
+                          </span>
                         )}
                       </td>
                     </tr>

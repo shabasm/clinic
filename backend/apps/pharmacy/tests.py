@@ -172,13 +172,25 @@ class PharmacyFlowTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(PharmacyBill.objects.get(pk=bill2).payment_status, "Pending")
 
-    def test_request_not_allowed_when_in_stock(self):
+    def test_request_allowed_when_in_stock(self):
         self.para.stock_quantity = 50
         self.para.save()
         response = self.client.post(
             f"{BASE}/medicine-requests/", {"medicine": self.para.id, "requested_quantity": 5}
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["current_stock"], 50)
+
+    def test_request_inactive_medicine_rejected(self):
+        self.para.is_active = False
+        self.para.save()
+        res = self.client.post(
+            f"{BASE}/medicine-requests/", {"medicine": self.para.id, "requested_quantity": 5}
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("inactive", str(res.data).lower())
+        self.para.is_active = True
+        self.para.save()
 
     def test_request_for_out_of_stock_and_no_duplicate(self):
         data = {"medicine": self.amox.id, "requested_quantity": 20}
@@ -690,6 +702,8 @@ class PharmacyFlowTests(APITestCase):
         self.assertEqual(res.data["prescription"]["status"], "Partially Dispensed")
         self.assertEqual(float(res.data["bill"]["total"]), 10.0)
 
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.PARTIAL)
         self.para.refresh_from_db()
         self.assertEqual(self.para.stock_quantity, 8)
         item.refresh_from_db()
