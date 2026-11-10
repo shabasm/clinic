@@ -403,6 +403,7 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
             totals = billing_totals(prescription)
 
             # 3. Validate requested items and calculate quantities
+            MAX_DISPENSE_LIMIT_PER_MEDICINE = 60
             medicine_dispense_quantities = {}
             items_to_process = []
             for row in requested:
@@ -413,9 +414,10 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
                     raise ValidationError(f"Item {item_id} is not in this prescription.")
                 if quantity <= 0:
                     continue
-                if quantity > item.remaining_quantity:
+                max_allowed = max(0, MAX_DISPENSE_LIMIT_PER_MEDICINE - item.dispensed_quantity)
+                if quantity > max_allowed:
                     raise ValidationError(
-                        f"{item.medicine_name}: quantity {quantity} exceeds remaining prescribed quantity ({item.remaining_quantity})."
+                        f"{item.medicine_name}: quantity {quantity} exceeds the maximum limit of {MAX_DISPENSE_LIMIT_PER_MEDICINE} units (already dispensed: {item.dispensed_quantity})."
                     )
                 medicine = medicines[item.medicine_id]
                 if not medicine.is_active:

@@ -66,26 +66,29 @@ function printInstructionSlip(slipElement, rxId) {
   }, 300);
 }
 
+const MAX_DISPENSE_LIMIT_PER_MEDICINE = 60;
+
 function getItemDispenseInfo(item) {
-  const remaining = Number(item.remaining_quantity) || 0;
   const stock = Number(item.stock_quantity) || 0;
   const unitPrice = Number(item.unit_price) || 0;
+  const dispensed = Number(item.dispensed_quantity) || 0;
 
   if (item.medicine_is_active === false) {
-    return { canDispense: false, reason: "Inactive", maxQty: 0, price: unitPrice };
+    return { canDispense: false, reason: "Inactive", maxQty: 0, price: unitPrice, allowedCapacity: 0 };
   }
   if (item.stock_state === "Expired") {
-    return { canDispense: false, reason: "Expired", maxQty: 0, price: unitPrice };
+    return { canDispense: false, reason: "Expired", maxQty: 0, price: unitPrice, allowedCapacity: 0 };
   }
   if (stock <= 0 || item.stock_state === "Out of stock") {
-    return { canDispense: false, reason: "Out of stock", maxQty: 0, price: unitPrice };
+    return { canDispense: false, reason: "Out of stock", maxQty: 0, price: unitPrice, allowedCapacity: 0 };
   }
-  if (remaining <= 0) {
-    return { canDispense: false, reason: "Completed", maxQty: 0, price: unitPrice };
+  const allowedCapacity = Math.max(0, MAX_DISPENSE_LIMIT_PER_MEDICINE - dispensed);
+  if (allowedCapacity <= 0) {
+    return { canDispense: false, reason: "Max limit (60) reached", maxQty: 0, price: unitPrice, allowedCapacity: 0 };
   }
 
-  const maxQty = Math.min(remaining, stock);
-  return { canDispense: true, reason: null, maxQty, price: unitPrice };
+  const maxQty = Math.min(allowedCapacity, stock);
+  return { canDispense: true, reason: null, maxQty, price: unitPrice, allowedCapacity };
 }
 
 function parseQty(val) {
@@ -108,12 +111,14 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
       .then((data) => {
         if (!isMounted) return;
         setPrescription(data);
-        // Default quantities to max dispensable quantity as strings
+        // Default quantities to prescribed remaining (or maxQty) as strings
         const initial = {};
         (data.items || []).forEach((item) => {
           const info = getItemDispenseInfo(item);
+          const remaining = Number(item.remaining_quantity) || 0;
           if (info.canDispense) {
-            initial[item.id] = String(info.maxQty);
+            const defaultQty = remaining > 0 ? Math.min(remaining, info.maxQty) : info.maxQty;
+            initial[item.id] = String(defaultQty);
           } else {
             initial[item.id] = "0";
           }
@@ -199,7 +204,7 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
   if (prescription?.items) {
     for (const item of prescription.items) {
       const info = getItemDispenseInfo(item);
-      const remaining = Number(item.remaining_quantity) || 0;
+      const remaining = Math.max(0, Number(item.remaining_quantity) || 0);
       if (info.canDispense) {
         const raw = quantities[item.id];
         const parsed = parseQty(raw);
@@ -418,7 +423,6 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                         {prescription.items && prescription.items.length > 0 ? (
                           prescription.items.map((item) => {
                             const info = getItemDispenseInfo(item);
-                            const remaining = Number(item.remaining_quantity) || 0;
                             const stock = Number(item.stock_quantity) || 0;
                             const rawVal = quantities[item.id] ?? "";
                             const parsedVal = parseInt(rawVal, 10);
@@ -459,7 +463,7 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                                         : "text-secondary"
                                     }
                                   >
-                                    {item.remaining_quantity}
+                                    {Math.max(0, item.remaining_quantity)}
                                   </strong>
                                 </td>
                                 <td>
@@ -573,9 +577,9 @@ function DispenseModal({ prescriptionId, onClose, onSuccess }) {
                                         className="text-secondary"
                                         style={{ fontSize: "0.75rem" }}
                                       >
-                                        {remaining <= stock
-                                          ? `Max ${info.maxQty} (prescribed remaining)`
-                                          : `Max ${info.maxQty} (stock limit)`}
+                                        {stock < info.allowedCapacity
+                                          ? `Max ${info.maxQty} (stock limit)`
+                                          : `Max ${info.maxQty} (limit 60)`}
                                       </div>
                                     </div>
                                   ) : (

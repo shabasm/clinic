@@ -720,7 +720,8 @@ class PharmacyFlowTests(APITestCase):
         self.assertEqual(res.status_code, 400)
         self.assertIn("stock", str(res.data).lower())
 
-    def test_dispense_and_pay_over_quantity(self):
+    def test_dispense_and_pay_more_than_prescribed_allowed(self):
+        # Prescribed is 2, stock is 10. Pharmacist dispenses 5 (more than prescribed, within 60 limit).
         pres = self.make_prescription(self.patient1, [(self.para, 2)])
         item = pres.items.first()
         res = self.client.post(
@@ -728,8 +729,28 @@ class PharmacyFlowTests(APITestCase):
             {"items": [{"item_id": item.id, "quantity": 5}]},
             format="json",
         )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(float(res.data["bill"]["total"]), 25.0)
+        self.para.refresh_from_db()
+        self.assertEqual(self.para.stock_quantity, 5)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 5)
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.DISPENSED)
+
+    def test_dispense_and_pay_over_quantity(self):
+        # Exceeding the maximum limit of 60 units is rejected.
+        self.para.stock_quantity = 100
+        self.para.save()
+        pres = self.make_prescription(self.patient1, [(self.para, 2)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 65}]},
+            format="json",
+        )
         self.assertEqual(res.status_code, 400)
-        self.assertIn("exceeds", str(res.data).lower())
+        self.assertIn("exceeds the maximum limit", str(res.data).lower())
 
     def test_dispense_and_pay_zero_or_empty_quantity(self):
         pres = self.make_prescription(self.patient1, [(self.para, 2)])
