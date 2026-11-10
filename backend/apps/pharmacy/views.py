@@ -35,6 +35,7 @@ from apps.admin_module.models import (
 
 from .permissions import IsPharmacist
 from .serializers import (
+    DispenseAndPaySerializer,
     ItemQuantitiesSerializer,
     MedicineRequestSerializer,
     MedicineSerializer,
@@ -166,9 +167,10 @@ class MedicineRequestViewSet(
 # ---------------------------------------------------------------------------
 class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
     """GET  /prescriptions/?status=Pending
-       POST /prescriptions/<id>/create-bill/   step 1: bill the medicines
-       POST /prescriptions/<id>/dispense/      step 3: give what has been paid for
-       POST /prescriptions/<id>/decline/       only while Pending and not billed"""
+       POST /prescriptions/<id>/create-bill/       step 1: bill the medicines
+       POST /prescriptions/<id>/dispense/          step 3: give what has been paid for
+       POST /prescriptions/<id>/dispense-and-pay/  one-step collect payment & dispense
+       POST /prescriptions/<id>/decline/           only while Pending and not billed"""
     permission_classes = [IsPharmacist]
     serializer_class = PrescriptionSerializer
     filter_backends = [filters.SearchFilter]
@@ -234,7 +236,10 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 item = items.get(row["item_id"])
                 if item is None:
                     raise ValidationError(f"Item {row['item_id']} is not in this prescription.")
-                medicine, quantity = item.medicine, row["quantity"]
+                quantity = row["quantity"]
+                if quantity > unbilled[item.id]:
+                    raise ValidationError(f"{item.medicine_name}: only {unbilled[item.id]} left to bill.")
+                medicine = item.medicine
                 medicine_map[medicine.id] = medicine
                 if not medicine.is_active:
                     raise ValidationError(f"{medicine.name} is inactive.")
@@ -359,6 +364,140 @@ class PrescriptionViewSet(viewsets.ReadOnlyModelViewSet):
                 prescription.save(update_fields=["status"])
 
         return Response(PrescriptionSerializer(self.get_queryset().get(pk=prescription.pk)).data)
+
+    # ---- One-step: collect payment and dispense ----------------------------
+    @action(detail=True, methods=["post"], url_path="dispense-and-pay")
+    def dispense_and_pay(self, request, pk=None):
+        """Atomic one-step billing and dispensing.
+        Body: {"items": [{"item_id": 1, "quantity": 4}, ...]}
+        Creates a Paid PharmacyBill, deducts medicine stock, updates item dispensed_quantity,
+        and sets prescription status to Dispensed or Partially Dispensed."""
+        input_serializer = DispenseAndPaySerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        requested = input_serializer.validated_data["items"]
+        today = timezone.localdate()
+
+        with transaction.atomic():
+            prescription = get_object_or_404(Prescription.objects.select_for_update(), pk=pk)
+            if prescription.status in (Prescription.Status.DISPENSED, Prescription.Status.DECLINED):
+                raise ValidationError(f"This prescription is already {prescription.status}.")
+            if prescription.bills.filter(payment_status=PharmacyBill.PaymentStatus.PENDING).exists():
+                raise ValidationError(
+                    "This prescription has an unpaid bill. Please cancel it from the Bills page first."
+                )
+
+            # 1. Lock items with select_for_update(of=("self",))
+            items = {
+                item.id: item
+                for item in PrescriptionItem.objects.select_for_update(of=("self",))
+                .select_related("medicine")
+                .filter(prescription=prescription)
+            }
+            # 2. Lock the needed Medicine rows separately (ordered by id for a consistent lock order)
+            medicine_ids = sorted({item.medicine_id for item in items.values()})
+            medicines = {
+                med.id: med
+                for med in Medicine.objects.select_for_update().filter(id__in=medicine_ids).order_by("id")
+            }
+
+            totals = billing_totals(prescription)
+
+            # 3. Validate requested items and calculate quantities
+            medicine_dispense_quantities = {}
+            items_to_process = []
+            for row in requested:
+                item_id = row["item_id"]
+                quantity = row["quantity"]
+                item = items.get(item_id)
+                if item is None:
+                    raise ValidationError(f"Item {item_id} is not in this prescription.")
+                if quantity <= 0:
+                    continue
+                if quantity > item.remaining_quantity:
+                    raise ValidationError(
+                        f"{item.medicine_name}: quantity {quantity} exceeds remaining prescribed quantity ({item.remaining_quantity})."
+                    )
+                medicine = medicines[item.medicine_id]
+                if not medicine.is_active:
+                    raise ValidationError(f"{medicine.name} is inactive.")
+                if medicine.expiry_date < today:
+                    raise ValidationError(f"{medicine.name} is expired.")
+
+                medicine_dispense_quantities[medicine.id] = (
+                    medicine_dispense_quantities.get(medicine.id, 0) + quantity
+                )
+                items_to_process.append((item, medicine, quantity))
+
+            if not items_to_process:
+                raise ValidationError("Please specify at least 1 unit of medicine to dispense.")
+
+            # Stock check (summed per medicine)
+            for med_id, total_qty in medicine_dispense_quantities.items():
+                med = medicines[med_id]
+                if total_qty > med.stock_quantity:
+                    raise ValidationError(f"{med.name}: only {med.stock_quantity} in stock.")
+
+            # 4. Create Paid PharmacyBill for any quantities not already covered by prior paid bills
+            now = timezone.now()
+            subtotal = Decimal("0")
+            bill_items_to_create = []
+
+            for item, medicine, quantity in items_to_process:
+                paid_quantity = totals.get(item.id, (0, 0))[1]
+                already_paid_not_dispensed = max(paid_quantity - item.dispensed_quantity, 0)
+                newly_billed_qty = max(quantity - already_paid_not_dispensed, 0)
+                if newly_billed_qty > 0:
+                    line_total = medicine.price * newly_billed_qty
+                    subtotal += line_total
+                    bill_items_to_create.append({
+                        "prescription_item": item,
+                        "medicine": medicine,
+                        "medicine_name": medicine.name,
+                        "quantity": newly_billed_qty,
+                        "unit_price": medicine.price,
+                        "line_total": line_total,
+                    })
+
+            bill = None
+            if bill_items_to_create:
+                bill = PharmacyBill.objects.create(
+                    patient=prescription.patient,
+                    prescription=prescription,
+                    subtotal=subtotal,
+                    total=subtotal,
+                    payment_status=PharmacyBill.PaymentStatus.PAID,
+                    paid_at=now,
+                )
+                for b_item in bill_items_to_create:
+                    PharmacyBillItem.objects.create(bill=bill, **b_item)
+
+            # 5. Decrement each medicine stock ONCE with the summed quantity
+            for med_id, total_qty in medicine_dispense_quantities.items():
+                medicine = medicines[med_id]
+                medicine.stock_quantity -= total_qty
+                medicine.save(update_fields=["stock_quantity"])
+
+            # 6. Update items' dispensed_quantity
+            for item, medicine, quantity in items_to_process:
+                item.dispensed_quantity += quantity
+                item.save(update_fields=["dispensed_quantity"])
+
+            # 7. Update prescription status
+            everything_done = all(i.remaining_quantity <= 0 for i in items.values())
+            if everything_done:
+                prescription.status = Prescription.Status.DISPENSED
+                prescription.dispensed_at = now
+                prescription.save(update_fields=["status", "dispensed_at"])
+            else:
+                prescription.status = Prescription.Status.PARTIAL
+                prescription.save(update_fields=["status"])
+
+        updated_prescription = PrescriptionSerializer(
+            self.get_queryset().get(pk=prescription.pk),
+            context={"totals": billing_totals(prescription)},
+        ).data
+        bill_data = PharmacyBillSerializer(bill).data if bill else None
+        return Response({"bill": bill_data, "prescription": updated_prescription}, status=status.HTTP_200_OK)
 
     @action(detail=True, methods=["post"])
     def decline(self, request, pk=None):

@@ -231,6 +231,23 @@ class ItemQuantitiesSerializer(serializers.Serializer):
         return items
 
 
+class DispenseItemQuantitySerializer(serializers.Serializer):
+    item_id = serializers.IntegerField()
+    quantity = serializers.IntegerField(min_value=0)
+
+
+class DispenseAndPaySerializer(serializers.Serializer):
+    items = DispenseItemQuantitySerializer(many=True, required=True, allow_empty=False)
+
+    def validate_items(self, items):
+        ids = [i["item_id"] for i in items]
+        if len(ids) != len(set(ids)):
+            raise serializers.ValidationError("Each item can appear only once.")
+        if not any(i.get("quantity", 0) > 0 for i in items):
+            raise serializers.ValidationError("At least one item must have a quantity greater than 0.")
+        return items
+
+
 # ---------------------------------------------------------------------------
 # Pharmacy bills
 # ---------------------------------------------------------------------------
