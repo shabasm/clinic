@@ -75,7 +75,7 @@ function StockRequestsPage() {
           <div>
             <h1 className="mb-1">Stock requests</h1>
             <p className="mb-0">
-              Ask the Admin for more stock of low, out-of-stock or expired medicines.
+              Ask the Admin for more stock of medicines.
             </p>
           </div>
           <button

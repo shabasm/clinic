@@ -34,6 +34,10 @@ export function dispensePrescription(id, items) {
   return api.post(`pharmacy/prescriptions/${id}/dispense/`, payload).then((res) => res.data);
 }
 
+export function dispenseAndPay(id, items) {
+  return api.post(`pharmacy/prescriptions/${id}/dispense-and-pay/`, { items }).then((res) => res.data);
+}
+
 export function declinePrescription(id) {
   return api.post(`pharmacy/prescriptions/${id}/decline/`).then((res) => res.data);
 }

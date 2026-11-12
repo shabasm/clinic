@@ -172,13 +172,25 @@ class PharmacyFlowTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(PharmacyBill.objects.get(pk=bill2).payment_status, "Pending")
 
-    def test_request_not_allowed_when_in_stock(self):
+    def test_request_allowed_when_in_stock(self):
         self.para.stock_quantity = 50
         self.para.save()
         response = self.client.post(
             f"{BASE}/medicine-requests/", {"medicine": self.para.id, "requested_quantity": 5}
         )
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data["current_stock"], 50)
+
+    def test_request_inactive_medicine_rejected(self):
+        self.para.is_active = False
+        self.para.save()
+        res = self.client.post(
+            f"{BASE}/medicine-requests/", {"medicine": self.para.id, "requested_quantity": 5}
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("inactive", str(res.data).lower())
+        self.para.is_active = True
+        self.para.save()
 
     def test_request_for_out_of_stock_and_no_duplicate(self):
         data = {"medicine": self.amox.id, "requested_quantity": 20}
@@ -637,6 +649,7 @@ class PharmacyFlowTests(APITestCase):
             "partially_dispensed_prescriptions",
             "dispensed_today",
             "bills_today",
+            "revenue_today",
             "low_stock_medicines",
             "out_of_stock_medicines",
             "expired_medicines",
@@ -652,3 +665,187 @@ class PharmacyFlowTests(APITestCase):
         # Non-pharmacist gets 403
         self.client.force_authenticate(self.doc_staff.user)
         self.assertEqual(self.client.get(f"{BASE}/dashboard/").status_code, 403)
+
+    # ---- 17. Atomic dispense-and-pay endpoint -----------------------------
+    def test_dispense_and_pay_full(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 4)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 4}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("bill", res.data)
+        self.assertIn("prescription", res.data)
+        self.assertEqual(res.data["prescription"]["status"], "Dispensed")
+        pres.refresh_from_db()
+        self.assertIsNotNone(pres.dispensed_at)
+        self.assertEqual(res.data["bill"]["payment_status"], "Paid")
+        self.assertEqual(float(res.data["bill"]["total"]), 20.0)
+
+        # Check stock decremented
+        self.para.refresh_from_db()
+        self.assertEqual(self.para.stock_quantity, 6)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 4)
+
+    def test_dispense_and_pay_partial(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 6)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 2}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["prescription"]["status"], "Partially Dispensed")
+        self.assertEqual(float(res.data["bill"]["total"]), 10.0)
+
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.PARTIAL)
+        self.para.refresh_from_db()
+        self.assertEqual(self.para.stock_quantity, 8)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 2)
+
+    def test_dispense_and_pay_insufficient_stock(self):
+        pres = self.make_prescription(self.patient1, [(self.amox, 2)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 2}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("stock", str(res.data).lower())
+
+    def test_dispense_and_pay_more_than_prescribed_allowed(self):
+        # Prescribed is 2, stock is 10. Pharmacist dispenses 5 (more than prescribed, within 60 limit).
+        pres = self.make_prescription(self.patient1, [(self.para, 2)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 5}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(float(res.data["bill"]["total"]), 25.0)
+        self.para.refresh_from_db()
+        self.assertEqual(self.para.stock_quantity, 5)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 5)
+        pres.refresh_from_db()
+        self.assertEqual(pres.status, Prescription.Status.DISPENSED)
+
+    def test_dispense_and_pay_over_quantity(self):
+        # Exceeding the maximum limit of 60 units is rejected.
+        self.para.stock_quantity = 100
+        self.para.save()
+        pres = self.make_prescription(self.patient1, [(self.para, 2)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 65}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("exceeds the maximum limit", str(res.data).lower())
+
+    def test_dispense_and_pay_zero_or_empty_quantity(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 2)])
+        item = pres.items.first()
+        # All zeros -> 400
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 0}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+        # Empty items list -> 400
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": []},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_dispense_and_pay_inactive_or_expired_medicine(self):
+        inactive_med = Medicine.objects.create(
+            name="InactiveMed", price=10, stock_quantity=10, expiry_date=date.today() + timedelta(days=30), is_active=False
+        )
+        pres = self.make_prescription(self.patient1, [(inactive_med, 1)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("inactive", str(res.data).lower())
+
+        expired_med = Medicine.objects.create(
+            name="ExpiredMed", price=10, stock_quantity=10, expiry_date=date.today() - timedelta(days=1), is_active=True
+        )
+        pres2 = self.make_prescription(self.patient1, [(expired_med, 1)])
+        item2 = pres2.items.first()
+        res2 = self.client.post(
+            f"{BASE}/prescriptions/{pres2.id}/dispense-and-pay/",
+            {"items": [{"item_id": item2.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(res2.status_code, 400)
+        self.assertIn("expired", str(res2.data).lower())
+
+    def test_dispense_and_pay_with_pending_bill(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 4)])
+        # Create an unpaid bill via old flow
+        self.create_bill(pres)
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 2}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn("unpaid bill", str(res.data).lower())
+
+    def test_dispense_and_pay_already_dispensed_or_declined(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 2)])
+        item = pres.items.first()
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 2}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Trying again when already Dispensed -> 400
+        res2 = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 1}]},
+            format="json",
+        )
+        self.assertEqual(res2.status_code, 400)
+        self.assertIn("already", str(res2.data).lower())
+
+    def test_dispense_and_pay_legacy_paid_items_not_charged_twice(self):
+        pres = self.make_prescription(self.patient1, [(self.para, 4)])
+        item = pres.items.first()
+        # Old flow: bill 2, mark Paid
+        b_res = self.create_bill(pres, items=[{"item_id": item.id, "quantity": 2}])
+        self.client.post(f"{BASE}/bills/{b_res.data['id']}/pay/")
+
+        # Now pharmacist uses dispense-and-pay for 3 units (2 already paid, 1 new)
+        res = self.client.post(
+            f"{BASE}/prescriptions/{pres.id}/dispense-and-pay/",
+            {"items": [{"item_id": item.id, "quantity": 3}]},
+            format="json",
+        )
+        self.assertEqual(res.status_code, 200)
+        # Bill should only charge for 1 unit (5.0), not 3 (15.0)
+        self.assertIsNotNone(res.data["bill"])
+        self.assertEqual(float(res.data["bill"]["total"]), 5.0)
+        item.refresh_from_db()
+        self.assertEqual(item.dispensed_quantity, 3)

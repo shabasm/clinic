@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { errorMessage, formatDate, formatId } from "../../admin/services/api";
+import DispenseModal from "../components/DispenseModal";
 import PharmacyNavbar from "../components/PharmacyNavbar";
+import ReceiptModal from "../components/ReceiptModal";
 import { badgeColor, getDashboard, getPrescriptions } from "../services/pharmacyApi";
 
 function todayStr() {
@@ -19,63 +21,42 @@ function PrescriptionsPage() {
   const [billsToday, setBillsToday] = useState(null);
   const statusFilter = searchParams.get("status") || "";
   const dateParam = searchParams.get("date");
+  const openParam = searchParams.get("open");
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [successBill, setSuccessBill] = useState(null);
+  const [viewingReceiptBill, setViewingReceiptBill] = useState(null);
+
+  // Active prescription modal id (null means closed)
+  const [selectedRxId, setSelectedRxId] = useState(openParam || null);
 
   const today = todayStr();
 
-  // If date=all is given, or if filtering for Pending/Partially Dispensed without an explicit date,
-  // show all dates so pending prescriptions from previous days are fully visible.
-  // Otherwise default to todayStr() for fresh visits.
-  const [dateFilter, setDateFilter] = useState(() => {
-    if (dateParam === "all") return "";
-    if (dateParam === "today") return today;
-    if (dateParam) return dateParam;
-    if (statusFilter === "Pending" || statusFilter === "Partially Dispensed") return "";
-    return today;
-  });
+  // Local user date override (null means compute from query params / defaults)
+  const [userDateFilter, setUserDateFilter] = useState(null);
 
-  // Sync dateFilter when searchParams change (e.g. clicking widgets/links)
-  useEffect(() => {
-    const d = searchParams.get("date");
-    const s = searchParams.get("status");
-    if (d === "all") {
-      setDateFilter("");
-    } else if (d === "today") {
-      setDateFilter(todayStr());
-    } else if (d) {
-      setDateFilter(d);
-    } else if (s === "Pending" || s === "Partially Dispensed") {
-      setDateFilter("");
-    }
-  }, [searchParams]);
+  const dateFilter =
+    userDateFilter !== null
+      ? userDateFilter
+      : dateParam === "all"
+      ? ""
+      : dateParam === "today"
+      ? today
+      : dateParam
+      ? dateParam
+      : statusFilter === "Pending" || statusFilter === "Partially Dispensed"
+      ? ""
+      : today;
 
-  const loadPrescriptions = (searchTerm, statusTerm) => {
+  const loadData = useCallback(() => {
     const params = {};
-    if (searchTerm?.trim()) params.search = searchTerm.trim();
-    if (statusTerm) params.status = statusTerm;
-    getPrescriptions(params)
-      .then((data) => {
-        const sorted = data
-          .slice()
-          .sort((a, b) => Number(b.status === "Pending") - Number(a.status === "Pending"));
-        setPrescriptions(sorted);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(errorMessage(err));
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    const params = {};
+    if (search.trim()) params.search = search.trim();
     if (statusFilter) params.status = statusFilter;
 
     Promise.all([getPrescriptions(params), getDashboard()])
       .then(([presData, dashData]) => {
-        if (!isMounted) return;
         const sorted = presData
           .slice()
           .sort((a, b) => Number(b.status === "Pending") - Number(a.status === "Pending"));
@@ -84,19 +65,18 @@ function PrescriptionsPage() {
         setLoading(false);
       })
       .catch((err) => {
-        if (!isMounted) return;
         setError(errorMessage(err));
         setLoading(false);
       });
+  }, [search, statusFilter]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [statusFilter]);
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
-    loadPrescriptions(search, statusFilter);
+    loadData();
   };
 
   const handleStatusChange = (val) => {
@@ -104,11 +84,40 @@ function PrescriptionsPage() {
     if (val) newParams.status = val;
     if (val === "Pending" || val === "Partially Dispensed") {
       newParams.date = "all";
-      setDateFilter("");
+      setUserDateFilter("");
     } else if (dateFilter) {
       newParams.date = dateFilter;
     }
     setSearchParams(newParams);
+  };
+
+  const handleCloseModal = () => {
+    setSelectedRxId(null);
+    if (searchParams.has("open")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("open");
+      setSearchParams(next, { replace: true });
+    }
+  };
+
+  const handleDispenseSuccess = ({ bill, prescription }) => {
+    handleCloseModal();
+    loadData();
+    if (bill) {
+      setSuccessBill(bill);
+      setSuccess(
+        `Dispensing complete! Pharmacy Bill ${formatId(
+          "BILL",
+          bill.id
+        )} generated. Prescription Status: ${prescription?.status || "Dispensed"}.`
+      );
+    } else if (prescription?.status === "Declined") {
+      setSuccessBill(null);
+      setSuccess(`Prescription ${formatId("RX", prescription.id)} marked as Declined.`);
+    } else {
+      setSuccessBill(null);
+      setSuccess("Prescription processed successfully.");
+    }
   };
 
   // Compute stats from full prescriptions list (before date/search filter)
@@ -135,7 +144,7 @@ function PrescriptionsPage() {
         <header className="page-header">
           <h1 className="mb-1">Prescriptions</h1>
           <p className="mb-0">
-            Prescriptions sent by doctors. Create a bill, collect payment, then dispense.
+            Review patient prescriptions, collect payment, and dispense medicines in one step.
           </p>
         </header>
 
@@ -145,13 +154,28 @@ function PrescriptionsPage() {
           </div>
         )}
 
+        {success && (
+          <div className="alert alert-success d-flex justify-content-between align-items-center mb-4" role="alert">
+            <div>{success}</div>
+            {successBill && (
+              <button
+                type="button"
+                className="btn btn-sm btn-outline-success ms-3"
+                onClick={() => setViewingReceiptBill(successBill)}
+              >
+                View / Print Receipt
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Stats row */}
         {!loading && (
           <div className="row g-3 mb-4">
             <div className="col-6 col-md-3">
               <Link
                 to="/pharmacy/prescriptions?status=Pending&date=all"
-                onClick={() => setDateFilter("")}
+                onClick={() => setUserDateFilter("")}
                 className="text-decoration-none"
               >
                 <div
@@ -170,7 +194,7 @@ function PrescriptionsPage() {
             <div className="col-6 col-md-3">
               <Link
                 to="/pharmacy/prescriptions?status=Partially%20Dispensed&date=all"
-                onClick={() => setDateFilter("")}
+                onClick={() => setUserDateFilter("")}
                 className="text-decoration-none"
               >
                 <div
@@ -189,7 +213,7 @@ function PrescriptionsPage() {
             <div className="col-6 col-md-3">
               <Link
                 to="/pharmacy/prescriptions?status=Dispensed&date=today"
-                onClick={() => setDateFilter(today)}
+                onClick={() => setUserDateFilter(today)}
                 className="text-decoration-none"
               >
                 <div
@@ -228,7 +252,7 @@ function PrescriptionsPage() {
               placeholder="Patient name, phone or prescription ID"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onBlur={() => loadPrescriptions(search, statusFilter)}
+              onBlur={loadData}
             />
           </div>
           <select
@@ -248,14 +272,14 @@ function PrescriptionsPage() {
             className="form-control w-auto"
             aria-label="Filter by date"
             value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
+            onChange={(e) => setUserDateFilter(e.target.value)}
             title="Filter prescriptions by date"
           />
           {dateFilter !== today && (
             <button
               className="btn btn-outline-secondary"
               type="button"
-              onClick={() => setDateFilter(today)}
+              onClick={() => setUserDateFilter(today)}
             >
               Today
             </button>
@@ -264,7 +288,7 @@ function PrescriptionsPage() {
             <button
               className="btn btn-outline-secondary"
               type="button"
-              onClick={() => setDateFilter("")}
+              onClick={() => setUserDateFilter("")}
             >
               Clear date
             </button>
@@ -293,28 +317,44 @@ function PrescriptionsPage() {
                     </td>
                   </tr>
                 ) : filtered.length > 0 ? (
-                  filtered.map((pres) => (
-                    <tr key={pres.id}>
-                      <td className="fw-semibold">{formatId("RX", pres.id)}</td>
-                      <td>{pres.patient_name || "—"}</td>
-                      <td>{pres.doctor_name || "—"}</td>
-                      <td>{formatDate(pres.date)}</td>
-                      <td>{pres.items?.length || 0}</td>
-                      <td>
-                        <span className={`badge text-bg-${badgeColor(pres.status)}`}>
-                          {pres.status}
-                        </span>
-                      </td>
-                      <td className="text-end text-nowrap">
-                        <Link
-                          to={`/pharmacy/prescriptions/${pres.id}`}
-                          className="btn btn-sm btn-primary"
-                        >
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
+                  filtered.map((pres) => {
+                    const canDispense =
+                      pres.status === "Pending" || pres.status === "Partially Dispensed";
+
+                    return (
+                      <tr key={pres.id}>
+                        <td className="fw-semibold">{formatId("RX", pres.id)}</td>
+                        <td>{pres.patient_name || "—"}</td>
+                        <td>{pres.doctor_name || "—"}</td>
+                        <td>{formatDate(pres.date)}</td>
+                        <td>{pres.items?.length || 0}</td>
+                        <td>
+                          <span className={`badge text-bg-${badgeColor(pres.status)}`}>
+                            {pres.status}
+                          </span>
+                        </td>
+                        <td className="text-end text-nowrap">
+                          {canDispense ? (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              onClick={() => setSelectedRxId(pres.id)}
+                            >
+                              Dispense / Process
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary"
+                              onClick={() => setSelectedRxId(pres.id)}
+                            >
+                              View Details
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td className="empty" colSpan="7">
@@ -329,6 +369,23 @@ function PrescriptionsPage() {
           </div>
         </div>
       </main>
+
+      {/* Single Dispense / Details Modal */}
+      {selectedRxId && (
+        <DispenseModal
+          prescriptionId={selectedRxId}
+          onClose={handleCloseModal}
+          onSuccess={handleDispenseSuccess}
+        />
+      )}
+
+      {/* Receipt Modal for newly generated bill */}
+      {viewingReceiptBill && (
+        <ReceiptModal
+          bill={viewingReceiptBill}
+          onClose={() => setViewingReceiptBill(null)}
+        />
+      )}
     </>
   );
 }

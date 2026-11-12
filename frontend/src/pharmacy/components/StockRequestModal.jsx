@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import AdminModal from "../../admin/components/AdminModal";
-import { errorMessage, formatId, validateForm } from "../../admin/services/api";
+import { errorMessage, validateForm } from "../../admin/services/api";
 import { createMedicineRequest, getMedicines } from "../services/pharmacyApi";
 
 function StockRequestModal({ initialMedicineId = "", onClose, onSuccess }) {
@@ -16,11 +16,15 @@ function StockRequestModal({ initialMedicineId = "", onClose, onSuccess }) {
     getMedicines()
       .then((data) => {
         if (!isMounted) return;
-        // Only medicines whose stock_state is not "In stock"
-        const eligible = data.filter((m) => m.stock_state !== "In stock");
+        // List all ACTIVE medicines sorted by name
+        const eligible = (data || [])
+          .filter((m) => m.is_active)
+          .sort((a, b) => a.name.localeCompare(b.name));
         setMedicines(eligible);
-        if (!medicineId && eligible.length > 0) {
-          setMedicineId(String(eligible[0].id));
+        if (initialMedicineId) {
+          setMedicineId(String(initialMedicineId));
+        } else if (eligible.length > 0) {
+          setMedicineId((prev) => prev || String(eligible[0].id));
         }
       })
       .catch((err) => {
@@ -29,7 +33,7 @@ function StockRequestModal({ initialMedicineId = "", onClose, onSuccess }) {
     return () => {
       isMounted = false;
     };
-  }, [medicineId]);
+  }, [initialMedicineId]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -72,11 +76,11 @@ function StockRequestModal({ initialMedicineId = "", onClose, onSuccess }) {
                 onChange={(e) => setMedicineId(e.target.value)}
               >
                 {medicines.length === 0 ? (
-                  <option value="">No low, out of stock, or expired medicines</option>
+                  <option value="">No active medicines available</option>
                 ) : (
                   medicines.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.name} ({formatId("MED", m.id)}) — {m.stock_state} (Stock: {m.stock_quantity})
+                      {m.name} (Stock: {m.stock_quantity}, {m.stock_state})
                     </option>
                   ))
                 )}
